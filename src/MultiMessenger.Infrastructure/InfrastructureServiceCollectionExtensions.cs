@@ -1,12 +1,16 @@
+using Amazon.S3;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using MultiMessenger.Core.Auditing;
 using MultiMessenger.Core.Identity;
+using MultiMessenger.Core.Storage;
 using MultiMessenger.Infrastructure.Auditing;
 using MultiMessenger.Infrastructure.Configuration;
 using MultiMessenger.Infrastructure.Identity;
 using MultiMessenger.Infrastructure.Persistence;
+using MultiMessenger.Infrastructure.Storage;
 
 namespace MultiMessenger.Infrastructure;
 
@@ -26,6 +30,10 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddSingleton<IPasswordHasher, IdentityPasswordHasher>();
         services.AddScoped<ManagerAuthenticator>();
         services.AddScoped<ManagerDirectory>();
+
+        services.AddSingleton<IAmazonS3>(provider =>
+            MinioSetup.CreateClient(provider.GetRequiredService<IOptions<MinioOptions>>().Value));
+        services.AddScoped<IFileStorage, MinioFileStorage>();
 
         return services;
     }

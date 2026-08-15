@@ -5,7 +5,9 @@ using MultiMessenger.Core.Auditing;
 using MultiMessenger.Infrastructure;
 using MultiMessenger.Infrastructure.Identity;
 using MultiMessenger.Infrastructure.Persistence;
+using MultiMessenger.Infrastructure.Storage;
 using MultiMessenger.Web.Components;
+using MultiMessenger.Web.Endpoints;
 using MultiMessenger.Web.Logging;
 using MultiMessenger.Web.Security;
 using Serilog;
@@ -49,6 +51,8 @@ try
     app.MapRazorComponents<App>()
         .AddInteractiveServerRenderMode();
 
+    app.MapMediaEndpoints();
+
     // Выход — обязательно POST с antiforgery-токеном: по GET-ссылке чужой сайт
     // мог бы разлогинивать сотрудника картинкой.
     app.MapPost(AuthenticationSetup.LogoutPath, async (
@@ -78,6 +82,7 @@ try
     Log.Information("MultiMessenger запускается, окружение {Environment}", app.Environment.EnvironmentName);
 
     await app.Services.MigrateDatabaseAsync();
+    await app.Services.EnsureMediaBucketAsync();
     await app.Services.SeedFirstAdminAsync();
 
     await app.RunAsync();
