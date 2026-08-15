@@ -1,7 +1,13 @@
+using Microsoft.AspNetCore.Antiforgery;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using MultiMessenger.Core.Auditing;
 using MultiMessenger.Infrastructure;
+using MultiMessenger.Infrastructure.Identity;
 using MultiMessenger.Infrastructure.Persistence;
 using MultiMessenger.Web.Components;
 using MultiMessenger.Web.Logging;
+using MultiMessenger.Web.Security;
 using Serilog;
 
 Log.Logger = SerilogConfiguration.CreateBootstrapLogger();
@@ -15,17 +21,17 @@ try
     // Секреты локально приезжают из user-secrets (подключены хостом в Development),
     // на сервере — из переменных окружения вида Minio__SecretKey, ConnectionStrings__Postgres.
     builder.Services.AddInfrastructure(builder.Configuration);
+    builder.Services.AddManagerAuthentication();
 
-    // Add services to the container.
     builder.Services.AddRazorComponents()
         .AddInteractiveServerComponents();
+    builder.Services.AddCascadingAuthenticationState();
 
     var app = builder.Build();
 
     // Одна строка на HTTP-запрос вместо трёх от стандартного middleware ASP.NET
     app.UseSerilogRequestLogging();
 
-    // Configure the HTTP request pipeline.
     if (!app.Environment.IsDevelopment())
     {
         app.UseExceptionHandler("/Error", createScopeForErrors: true);
@@ -35,15 +41,44 @@ try
     app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
     app.UseHttpsRedirection();
 
+    app.UseAuthentication();
+    app.UseAuthorization();
     app.UseAntiforgery();
 
     app.MapStaticAssets();
     app.MapRazorComponents<App>()
         .AddInteractiveServerRenderMode();
 
+    // Выход — обязательно POST с antiforgery-токеном: по GET-ссылке чужой сайт
+    // мог бы разлогинивать сотрудника картинкой.
+    app.MapPost(AuthenticationSetup.LogoutPath, async (
+        HttpContext httpContext,
+        IAntiforgery antiforgery,
+        IAuditTrail auditTrail) =>
+    {
+        await antiforgery.ValidateRequestAsync(httpContext);
+
+        var managerId = httpContext.User.GetManagerId();
+
+        await httpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+
+        if (managerId is not null)
+        {
+            await auditTrail.RecordAsync(new AuditEntry
+            {
+                ManagerId = managerId,
+                Action = AuditAction.ManagerSignedOut,
+                IpAddress = httpContext.Connection.RemoteIpAddress?.ToString(),
+            });
+        }
+
+        return Results.LocalRedirect(AuthenticationSetup.LoginPath);
+    });
+
     Log.Information("MultiMessenger запускается, окружение {Environment}", app.Environment.EnvironmentName);
 
     await app.Services.MigrateDatabaseAsync();
+    await app.Services.SeedFirstAdminAsync();
 
     await app.RunAsync();
 }

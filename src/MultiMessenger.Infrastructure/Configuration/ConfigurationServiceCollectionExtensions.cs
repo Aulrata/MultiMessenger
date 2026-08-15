@@ -35,6 +35,10 @@ public static class ConfigurationServiceCollectionExtensions
             .Bind(configuration.GetSection(TelegramOptions.SectionName))
             .ValidateDataAnnotations();
 
+        // Без валидации вовсе: на работающей системе секции Seed не должно быть.
+        services.AddOptions<SeedOptions>()
+            .Bind(configuration.GetSection(SeedOptions.SectionName));
+
         return services;
     }
 }

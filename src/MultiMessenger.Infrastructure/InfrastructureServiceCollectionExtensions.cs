@@ -2,8 +2,10 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using MultiMessenger.Core.Auditing;
+using MultiMessenger.Core.Identity;
 using MultiMessenger.Infrastructure.Auditing;
 using MultiMessenger.Infrastructure.Configuration;
+using MultiMessenger.Infrastructure.Identity;
 using MultiMessenger.Infrastructure.Persistence;
 
 namespace MultiMessenger.Infrastructure;
@@ -20,6 +22,10 @@ public static class InfrastructureServiceCollectionExtensions
             options.UseNpgsql(DatabaseSettings.GetRequiredConnectionString(configuration)));
 
         services.AddScoped<IAuditTrail, EfAuditTrail>();
+
+        services.AddSingleton<IPasswordHasher, IdentityPasswordHasher>();
+        services.AddScoped<ManagerAuthenticator>();
+        services.AddScoped<ManagerDirectory>();
 
         return services;
     }
