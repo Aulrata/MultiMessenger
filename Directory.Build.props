@@ -1,0 +1,13 @@
+<Project>
+
+  <!-- Общие настройки для всех проектов solution: единая версия TFM,
+       nullable-контекст и implicit usings задаются здесь, а не в каждом .csproj. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+</Project>

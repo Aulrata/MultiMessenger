@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/MultiMessenger.Core/MultiMessenger.Core.csproj" />
+    <Project Path="src/MultiMessenger.Infrastructure/MultiMessenger.Infrastructure.csproj" />
+    <Project Path="src/MultiMessenger.Web/MultiMessenger.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/MultiMessenger.Tests/MultiMessenger.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,35 @@
+<Project>
+
+  <!-- Central Package Management: версии всех NuGet-пакетов задаются только здесь.
+       В .csproj остаются <PackageReference Include="..." /> без атрибута Version —
+       попытка указать версию на месте вызовет ошибку сборки NU1008. -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+  <!-- Данные: PostgreSQL через EF Core, MinIO через S3-совместимый клиент -->
+  <ItemGroup>
+    <PackageVersion Include="AWSSDK.S3" Version="4.0.102.1" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.11" />
+    <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+  </ItemGroup>
+
+  <!-- Клиенты мессенджеров -->
+  <ItemGroup>
+    <PackageVersion Include="WTelegramClient" Version="4.4.7" />
+  </ItemGroup>
+
+  <!-- Тесты.
+       FluentAssertions намеренно закреплён на 7.x: начиная с 8.0 библиотека
+       распространяется по платной лицензии Xceed для коммерческого использования. -->
+  <ItemGroup>
+    <PackageVersion Include="coverlet.collector" Version="6.0.4" />
+    <PackageVersion Include="FluentAssertions" Version="7.2.0" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageVersion Include="NSubstitute" Version="6.2.0" />
+    <PackageVersion Include="Testcontainers.PostgreSql" Version="4.14.0" />
+    <PackageVersion Include="xunit" Version="2.9.3" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+</Project>

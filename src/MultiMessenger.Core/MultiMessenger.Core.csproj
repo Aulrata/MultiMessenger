@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Доменный слой. Умышленно без PackageReference и ProjectReference:
+       зависимость на EF Core / ASP.NET / клиенты мессенджеров сюда попадать не должна.
+       Это правило закреплено тестом CoreProjectHasNoDependencies. -->
+
+</Project>
