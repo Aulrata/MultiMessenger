@@ -17,7 +17,7 @@ public enum AuditAction
     ManagerDeactivated = 11,
     ManagerPasswordChanged = 12,
 
-    // Подключение каналов (этап 2.4, 3.1, 3.2)
+    // Подключение каналов (этапы 2.4, 3.1, 3.2)
     MessengerAccountConnected = 20,
     MessengerAccountDisconnected = 21,
     MessengerAccountReauthRequired = 22,
@@ -26,8 +26,23 @@ public enum AuditAction
     MessageSent = 30,
     DialogOpened = 31,
     MediaDownloaded = 32,
+    MessageEdited = 33,
+    MessageDeleted = 34,
 
     // Работа с клиентами (этапы 2.7, 3.3)
     ContactUpdated = 40,
     ContactsMerged = 41,
+
+    /// <summary>
+    /// Просмотр чужой переписки — администратором из админки или сотрудником,
+    /// работающим через мультиаккаунт. Событие повышенной чувствительности:
+    /// именно ради него журнал и нужен.
+    /// </summary>
+    ForeignDialogOpened = 50,
+
+    /// <summary>Вход в аккаунт другого сотрудника.</summary>
+    ImpersonationStarted = 51,
+
+    /// <summary>Возврат в собственный аккаунт.</summary>
+    ImpersonationEnded = 52,
 }

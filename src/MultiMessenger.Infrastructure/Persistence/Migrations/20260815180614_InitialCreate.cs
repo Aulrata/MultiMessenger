@@ -17,6 +17,7 @@ namespace MultiMessenger.Infrastructure.Persistence.Migrations
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
                     ManagerId = table.Column<Guid>(type: "uuid", nullable: true),
+                    ImpersonatedManagerId = table.Column<Guid>(type: "uuid", nullable: true),
                     Action = table.Column<string>(type: "character varying(32)", maxLength: 32, nullable: false),
                     Subject = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: true),
                     EntityType = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: true),
@@ -170,6 +171,9 @@ namespace MultiMessenger.Infrastructure.Persistence.Migrations
                     Text = table.Column<string>(type: "text", nullable: true),
                     Status = table.Column<string>(type: "character varying(32)", maxLength: 32, nullable: false),
                     IsEdited = table.Column<bool>(type: "boolean", nullable: false),
+                    IsDeleted = table.Column<bool>(type: "boolean", nullable: false),
+                    DeletedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
+                    SentByManagerId = table.Column<Guid>(type: "uuid", nullable: true),
                     FailureReason = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: true),
                     CreatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
                 },
@@ -214,8 +218,11 @@ namespace MultiMessenger.Infrastructure.Persistence.Migrations
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
                     MessageId = table.Column<Guid>(type: "uuid", nullable: false),
+                    ChangeType = table.Column<string>(type: "character varying(32)", maxLength: 32, nullable: false),
+                    Origin = table.Column<string>(type: "character varying(32)", maxLength: 32, nullable: false),
                     PreviousText = table.Column<string>(type: "text", nullable: true),
-                    EditedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
+                    ChangedByManagerId = table.Column<Guid>(type: "uuid", nullable: true),
+                    ChangedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -238,6 +245,13 @@ namespace MultiMessenger.Infrastructure.Persistence.Migrations
                 name: "IX_AuditEntries_EntityType_EntityId",
                 table: "AuditEntries",
                 columns: new[] { "EntityType", "EntityId" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_AuditEntries_ImpersonatedManagerId_OccurredAt",
+                table: "AuditEntries",
+                columns: new[] { "ImpersonatedManagerId", "OccurredAt" },
+                descending: new[] { false, true },
+                filter: "\"ImpersonatedManagerId\" IS NOT NULL");
 
             migrationBuilder.CreateIndex(
                 name: "IX_AuditEntries_ManagerId_OccurredAt",
@@ -302,9 +316,16 @@ namespace MultiMessenger.Infrastructure.Persistence.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
-                name: "IX_MessageEditHistory_MessageId_EditedAt",
+                name: "IX_MessageEditHistory_ChangedByManagerId_ChangedAt",
                 table: "MessageEditHistory",
-                columns: new[] { "MessageId", "EditedAt" });
+                columns: new[] { "ChangedByManagerId", "ChangedAt" },
+                descending: new[] { false, true },
+                filter: "\"ChangedByManagerId\" IS NOT NULL");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_MessageEditHistory_MessageId_ChangedAt",
+                table: "MessageEditHistory",
+                columns: new[] { "MessageId", "ChangedAt" });
 
             migrationBuilder.CreateIndex(
                 name: "IX_Messages_DialogId_CreatedAt",
@@ -317,6 +338,12 @@ namespace MultiMessenger.Infrastructure.Persistence.Migrations
                 columns: new[] { "DialogId", "PlatformMessageId" },
                 unique: true,
                 filter: "\"PlatformMessageId\" IS NOT NULL");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Messages_SentByManagerId",
+                table: "Messages",
+                column: "SentByManagerId",
+                filter: "\"SentByManagerId\" IS NOT NULL");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Messages_Status",

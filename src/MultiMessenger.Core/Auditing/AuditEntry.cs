@@ -19,6 +19,14 @@ public class AuditEntry
     /// </summary>
     public Guid? ManagerId { get; set; }
 
+    /// <summary>
+    /// Чей аккаунт использовался, когда действие выполнялось через мультиаккаунт.
+    /// В <see cref="ManagerId"/> при этом остаётся тот, кто действие фактически совершил.
+    /// Разделение принципиальное: журнал должен отвечать «кто это сделал»,
+    /// а не «под кем это выглядело».
+    /// </summary>
+    public Guid? ImpersonatedManagerId { get; set; }
+
     public AuditAction Action { get; set; }
 
     /// <summary>

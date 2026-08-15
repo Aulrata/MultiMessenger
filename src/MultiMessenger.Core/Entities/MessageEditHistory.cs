@@ -1,8 +1,15 @@
+using MultiMessenger.Core.Enums;
+
 namespace MultiMessenger.Core.Entities;
 
 /// <summary>
-/// Версия текста до правки. Менеджер видит актуальный вариант, как в обычном клиенте,
-/// но полная история изменений остаётся в БД.
+/// Журнал изменений сообщения: правки и удаления, из любого источника.
+/// <para>
+/// В ТЗ таблица называется историей правок и хранит только предыдущий текст.
+/// Здесь она расширена до полного журнала изменений — удаления фиксируются
+/// в ней же с <see cref="MessageChangeType.Deleted"/>, чтобы история одного
+/// сообщения читалась одним запросом, а не склейкой двух таблиц.
+/// </para>
 /// </summary>
 public class MessageEditHistory
 {
@@ -12,7 +19,22 @@ public class MessageEditHistory
 
     public Message? Message { get; set; }
 
+    public MessageChangeType ChangeType { get; set; } = MessageChangeType.Edited;
+
+    public MessageChangeOrigin Origin { get; set; }
+
+    /// <summary>
+    /// Текст до изменения. Для удаления — текст на момент удаления: именно ради него
+    /// строка и заводится, иначе содержимое теряется безвозвратно.
+    /// </summary>
     public string? PreviousText { get; set; }
 
-    public DateTimeOffset EditedAt { get; set; } = DateTimeOffset.UtcNow;
+    /// <summary>
+    /// Менеджер, выполнивший действие через наш интерфейс. Null, когда изменение
+    /// пришло от клиента или из внешнего клиента менеджера. При работе через
+    /// мультиаккаунт здесь тот, кто фактически нажал кнопку, а не владелец канала.
+    /// </summary>
+    public Guid? ChangedByManagerId { get; set; }
+
+    public DateTimeOffset ChangedAt { get; set; } = DateTimeOffset.UtcNow;
 }

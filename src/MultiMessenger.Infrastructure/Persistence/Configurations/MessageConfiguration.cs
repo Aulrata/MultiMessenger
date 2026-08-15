@@ -26,6 +26,11 @@ public class MessageConfiguration : IEntityTypeConfiguration<Message>
         builder.HasIndex(message => message.Status)
             .HasFilter("\"Status\" = 'Pending'");
 
+        // Статистика по сотрудникам считается по фактическому отправителю,
+        // а не по владельцу канала — при работе через мультиаккаунт они расходятся.
+        builder.HasIndex(message => message.SentByManagerId)
+            .HasFilter("\"SentByManagerId\" IS NOT NULL");
+
         builder.HasMany(message => message.EditHistory)
             .WithOne(history => history.Message)
             .HasForeignKey(history => history.MessageId)

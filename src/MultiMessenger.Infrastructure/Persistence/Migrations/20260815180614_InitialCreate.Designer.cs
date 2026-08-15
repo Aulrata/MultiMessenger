@@ -12,7 +12,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace MultiMessenger.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260815170516_InitialCreate")]
+    [Migration("20260815180614_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />
@@ -48,6 +48,9 @@ namespace MultiMessenger.Infrastructure.Persistence.Migrations
                         .IsUnicode(true)
                         .HasColumnType("character varying(64)");
 
+                    b.Property<Guid?>("ImpersonatedManagerId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("IpAddress")
                         .HasMaxLength(64)
                         .IsUnicode(true)
@@ -70,6 +73,10 @@ namespace MultiMessenger.Infrastructure.Persistence.Migrations
                         .IsDescending();
 
                     b.HasIndex("EntityType", "EntityId");
+
+                    b.HasIndex("ImpersonatedManagerId", "OccurredAt")
+                        .IsDescending(false, true)
+                        .HasFilter("\"ImpersonatedManagerId\" IS NOT NULL");
 
                     b.HasIndex("ManagerId", "OccurredAt")
                         .IsDescending(false, true);
@@ -314,6 +321,9 @@ namespace MultiMessenger.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<Guid>("DialogId")
                         .HasColumnType("uuid");
 
@@ -326,6 +336,9 @@ namespace MultiMessenger.Infrastructure.Persistence.Migrations
                         .HasMaxLength(1000)
                         .IsUnicode(true)
                         .HasColumnType("character varying(1000)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
 
                     b.Property<bool>("IsEdited")
                         .HasColumnType("boolean");
@@ -340,6 +353,9 @@ namespace MultiMessenger.Infrastructure.Persistence.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
 
+                    b.Property<Guid?>("SentByManagerId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(32)
@@ -350,6 +366,9 @@ namespace MultiMessenger.Infrastructure.Persistence.Migrations
                         .HasColumnType("text");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("SentByManagerId")
+                        .HasFilter("\"SentByManagerId\" IS NOT NULL");
 
                     b.HasIndex("Status")
                         .HasFilter("\"Status\" = 'Pending'");
@@ -369,11 +388,24 @@ namespace MultiMessenger.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<DateTimeOffset>("EditedAt")
+                    b.Property<string>("ChangeType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTimeOffset>("ChangedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ChangedByManagerId")
+                        .HasColumnType("uuid");
 
                     b.Property<Guid>("MessageId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("Origin")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
 
                     b.Property<string>("PreviousText")
                         .IsUnicode(true)
@@ -381,7 +413,11 @@ namespace MultiMessenger.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("MessageId", "EditedAt");
+                    b.HasIndex("ChangedByManagerId", "ChangedAt")
+                        .IsDescending(false, true)
+                        .HasFilter("\"ChangedByManagerId\" IS NOT NULL");
+
+                    b.HasIndex("MessageId", "ChangedAt");
 
                     b.ToTable("MessageEditHistory", (string)null);
                 });

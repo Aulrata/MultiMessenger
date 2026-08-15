@@ -25,6 +25,11 @@ public class AuditEntryConfiguration : IEntityTypeConfiguration<AuditEntry>
         // «Кто открывал этот диалог» — второй сценарий, от сущности.
         builder.HasIndex(entry => new { entry.EntityType, entry.EntityId });
 
+        // «Кто заходил в аккаунт этого сотрудника» — третий сценарий, от мультиаккаунта.
+        builder.HasIndex(entry => new { entry.ImpersonatedManagerId, entry.OccurredAt })
+            .IsDescending(false, true)
+            .HasFilter("\"ImpersonatedManagerId\" IS NOT NULL");
+
         builder.HasIndex(entry => entry.OccurredAt)
             .IsDescending();
 

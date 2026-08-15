@@ -12,6 +12,12 @@ public class MessageEditHistoryConfiguration : IEntityTypeConfiguration<MessageE
 
         builder.HasKey(history => history.Id);
 
-        builder.HasIndex(history => new { history.MessageId, history.EditedAt });
+        // Полная история одного сообщения в хронологическом порядке.
+        builder.HasIndex(history => new { history.MessageId, history.ChangedAt });
+
+        // «Что этот сотрудник правил и удалял» — для разбора спорных ситуаций.
+        builder.HasIndex(history => new { history.ChangedByManagerId, history.ChangedAt })
+            .IsDescending(false, true)
+            .HasFilter("\"ChangedByManagerId\" IS NOT NULL");
     }
 }

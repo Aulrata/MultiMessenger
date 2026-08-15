@@ -26,6 +26,15 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
 
+    /// <remarks>
+    /// Важно при работе с этим контекстом: сущности проставляют себе <c>Id</c>
+    /// в инициализаторе (Guid v7 ради упорядоченности индексов). Из-за заполненного
+    /// ключа EF считает новую запись, добавленную в коллекцию уже отслеживаемого
+    /// родителя, существующей и выдаёт UPDATE вместо INSERT. Поэтому дочерние
+    /// сущности к загруженному родителю добавляются через <c>DbSet.Add</c>
+    /// с явным указанием внешнего ключа, а не через <c>parent.Children.Add</c>.
+    /// Для целиком нового графа это неактуально: <c>Add</c> помечает Added всё дерево.
+    /// </remarks>
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);

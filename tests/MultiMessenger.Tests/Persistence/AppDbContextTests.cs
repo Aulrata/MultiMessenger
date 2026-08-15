@@ -183,6 +183,149 @@ public class AppDbContextTests(PostgresFixture postgres) : IAsyncLifetime
         await save.Should().ThrowAsync<DbUpdateException>();
     }
 
+    /// <summary>
+    /// Удаление не должно уничтожать содержимое: строка сообщения остаётся с флагом,
+    /// а текст на момент удаления сохраняется в журнале изменений.
+    /// </summary>
+    [Fact]
+    public async Task DeletedMessageKeepsItsTextInHistory()
+    {
+        var dialog = await CreateDialogAsync();
+        var message = NewMessage(dialog.Id, "9001");
+        message.Text = "Отправил не туда";
+
+        await using (var dbContext = postgres.CreateDbContext())
+        {
+            dbContext.Messages.Add(message);
+            await dbContext.SaveChangesAsync();
+        }
+
+        await using (var dbContext = postgres.CreateDbContext())
+        {
+            var stored = await dbContext.Messages.SingleAsync(item => item.Id == message.Id);
+
+            // Именно Add в DbSet, а не stored.EditHistory.Add: у сущностей ключ
+            // проставляется в конструкторе, и EF считает такую запись существующей —
+            // получается UPDATE несуществующей строки вместо INSERT.
+            dbContext.MessageEditHistory.Add(new MessageEditHistory
+            {
+                MessageId = stored.Id,
+                ChangeType = MessageChangeType.Deleted,
+                Origin = MessageChangeOrigin.ManagerViaService,
+                PreviousText = stored.Text,
+                ChangedByManagerId = Guid.CreateVersion7(),
+            });
+            stored.IsDeleted = true;
+            stored.DeletedAt = DateTimeOffset.UtcNow;
+            stored.Text = null;
+
+            await dbContext.SaveChangesAsync();
+        }
+
+        await using (var dbContext = postgres.CreateDbContext())
+        {
+            var stored = await dbContext.Messages
+                .Include(item => item.EditHistory)
+                .SingleAsync(item => item.Id == message.Id);
+
+            stored.IsDeleted.Should().BeTrue();
+            stored.Text.Should().BeNull();
+
+            var change = stored.EditHistory.Should().ContainSingle().Subject;
+            change.ChangeType.Should().Be(MessageChangeType.Deleted);
+            change.Origin.Should().Be(MessageChangeOrigin.ManagerViaService);
+            change.PreviousText.Should().Be("Отправил не туда");
+            change.ChangedByManagerId.Should().NotBeNull();
+        }
+    }
+
+    /// <summary>
+    /// Правки и удаления от разных источников ложатся в один журнал и читаются
+    /// как цельная хронология одного сообщения.
+    /// </summary>
+    [Fact]
+    public async Task EditsAndDeletionFormSingleTimeline()
+    {
+        var dialog = await CreateDialogAsync();
+        var message = NewMessage(dialog.Id, "9002");
+        var start = DateTimeOffset.UtcNow;
+
+        await using (var dbContext = postgres.CreateDbContext())
+        {
+            message.EditHistory =
+            [
+                new MessageEditHistory
+                {
+                    ChangeType = MessageChangeType.Edited,
+                    Origin = MessageChangeOrigin.ManagerViaService,
+                    PreviousText = "Первая версия",
+                    ChangedAt = start,
+                },
+                new MessageEditHistory
+                {
+                    ChangeType = MessageChangeType.Edited,
+                    Origin = MessageChangeOrigin.ManagerViaExternalClient,
+                    PreviousText = "Вторая версия",
+                    ChangedAt = start.AddMinutes(1),
+                },
+                new MessageEditHistory
+                {
+                    ChangeType = MessageChangeType.Deleted,
+                    Origin = MessageChangeOrigin.Client,
+                    PreviousText = "Третья версия",
+                    ChangedAt = start.AddMinutes(2),
+                },
+            ];
+
+            dbContext.Messages.Add(message);
+            await dbContext.SaveChangesAsync();
+        }
+
+        await using (var dbContext = postgres.CreateDbContext())
+        {
+            var timeline = await dbContext.MessageEditHistory
+                .Where(change => change.MessageId == message.Id)
+                .OrderBy(change => change.ChangedAt)
+                .ToListAsync();
+
+            timeline.Select(change => change.Origin).Should().Equal(
+                MessageChangeOrigin.ManagerViaService,
+                MessageChangeOrigin.ManagerViaExternalClient,
+                MessageChangeOrigin.Client);
+
+            timeline[^1].ChangeType.Should().Be(MessageChangeType.Deleted);
+        }
+    }
+
+    /// <summary>
+    /// При работе через мультиаккаунт журнал обязан хранить и того, кто действовал,
+    /// и того, под кем он работал.
+    /// </summary>
+    [Fact]
+    public async Task ImpersonationIsRecordedWithBothManagers()
+    {
+        var actingManagerId = Guid.CreateVersion7();
+        var impersonatedManagerId = Guid.CreateVersion7();
+
+        await using var dbContext = postgres.CreateDbContext();
+
+        dbContext.AuditEntries.Add(new AuditEntry
+        {
+            ManagerId = actingManagerId,
+            ImpersonatedManagerId = impersonatedManagerId,
+            Action = AuditAction.ImpersonationStarted,
+            Subject = "Замещение на время отпуска",
+        });
+
+        await dbContext.SaveChangesAsync();
+
+        var stored = await dbContext.AuditEntries
+            .SingleAsync(entry => entry.ManagerId == actingManagerId);
+
+        stored.ImpersonatedManagerId.Should().Be(impersonatedManagerId);
+        stored.Action.Should().Be(AuditAction.ImpersonationStarted);
+    }
+
     /// <summary>Перечисления должны лежать в БД именами, иначе журнал не прочитать SQL-запросом.</summary>
     [Fact]
     public async Task EnumsAreStoredAsText()
