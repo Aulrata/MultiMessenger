@@ -18,4 +18,18 @@ public sealed class StorageOptions
     /// </summary>
     [Required(AllowEmptyStrings = false)]
     public string SessionsBasePath { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Директория с ключами ASP.NET Data Protection — ими подписываются куки
+    /// аутентификации и antiforgery-токены.
+    /// <para>
+    /// В контейнере обязана указывать на примонтированный volume: по умолчанию ключи
+    /// лежат внутри контейнера, а выкатка его пересоздаёт — и всех менеджеров
+    /// выбрасывает из системы при каждом обновлении.
+    /// </para>
+    /// <para>
+    /// Пусто — поведение по умолчанию, годится для локальной разработки.
+    /// </para>
+    /// </summary>
+    public string? DataProtectionKeysPath { get; init; }
 }

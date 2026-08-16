@@ -25,6 +25,7 @@ try
     // на сервере — из переменных окружения вида Minio__SecretKey, ConnectionStrings__Postgres.
     builder.Services.AddInfrastructure(builder.Configuration);
     builder.Services.AddManagerAuthentication();
+    builder.Services.AddPersistentDataProtection(builder.Configuration);
 
     // Живость и готовность разделены: контейнеру нужно знать, что процесс не завис,
     // а балансировщику и деплою — что приложение реально способно работать.

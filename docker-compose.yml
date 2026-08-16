@@ -80,6 +80,7 @@ services:
     volumes:
       # Файлы сессий Telegram/WhatsApp переживают пересоздание контейнера.
       - sessions:/data/sessions
+      - dataprotection:/data/keys
 
   # Просмотр структурированных логов. Не входит в основной стек — поднимается отдельно:
   #   docker compose --profile observability up -d
@@ -103,3 +104,4 @@ volumes:
   minio-data:
   seq-data:
   sessions:
+  dataprotection:
