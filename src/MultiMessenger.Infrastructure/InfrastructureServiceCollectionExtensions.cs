@@ -9,6 +9,7 @@ using MultiMessenger.Core.Storage;
 using MultiMessenger.Infrastructure.Auditing;
 using MultiMessenger.Infrastructure.Configuration;
 using MultiMessenger.Infrastructure.Identity;
+using MultiMessenger.Infrastructure.Media;
 using MultiMessenger.Infrastructure.Persistence;
 using MultiMessenger.Infrastructure.Storage;
 
@@ -34,6 +35,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddSingleton<IAmazonS3>(provider =>
             MinioSetup.CreateClient(provider.GetRequiredService<IOptions<MinioOptions>>().Value));
         services.AddScoped<IFileStorage, MinioFileStorage>();
+        services.AddScoped<MediaAccessResolver>();
 
         return services;
     }

@@ -1,8 +1,7 @@
-using Microsoft.EntityFrameworkCore;
 using MultiMessenger.Core.Auditing;
 using MultiMessenger.Core.Storage;
 using MultiMessenger.Infrastructure.Identity;
-using MultiMessenger.Infrastructure.Persistence;
+using MultiMessenger.Infrastructure.Media;
 using MultiMessenger.Web.Security;
 
 namespace MultiMessenger.Web.Endpoints;
@@ -25,46 +24,28 @@ public static class MediaEndpoints
     private static async Task<IResult> GetMediaAsync(
         Guid id,
         HttpContext httpContext,
-        AppDbContext dbContext,
+        MediaAccessResolver accessResolver,
         IFileStorage fileStorage,
         IAuditTrail auditTrail,
         CancellationToken cancellationToken)
     {
-        var attachment = await dbContext.MediaAttachments
-            .Where(candidate => candidate.Id == id)
-            .Select(candidate => new
-            {
-                candidate.StorageKey,
-                candidate.MimeType,
-                candidate.FileName,
-                OwnerManagerId = candidate.Message!.Dialog!.MessengerAccount!.ManagerId,
-                DialogId = candidate.Message.DialogId,
-            })
-            .SingleOrDefaultAsync(cancellationToken);
+        var managerId = httpContext.User.GetManagerId();
 
-        if (attachment is null)
-        {
-            return Results.NotFound();
-        }
-
-        var currentManagerId = httpContext.User.GetManagerId();
-
-        if (currentManagerId is null)
+        if (managerId is null)
         {
             return Results.Unauthorized();
         }
 
-        var isOwner = attachment.OwnerManagerId == currentManagerId;
-        var isAdmin = httpContext.User.IsAdmin();
+        var access = await accessResolver.ResolveAsync(
+            id, managerId.Value, httpContext.User.IsAdmin(), cancellationToken);
 
-        if (!isOwner && !isAdmin)
+        // Не найдено и не положено выглядят одинаково — см. комментарий в MediaAccessResolver.
+        if (access is null)
         {
-            // Именно 404, а не 403: иначе перебором идентификаторов можно узнать,
-            // какие вложения вообще существуют в системе.
             return Results.NotFound();
         }
 
-        var file = await fileStorage.GetAsync(attachment.StorageKey, cancellationToken);
+        var file = await fileStorage.GetAsync(access.StorageKey, cancellationToken);
 
         if (file is null)
         {
@@ -74,26 +55,23 @@ public static class MediaEndpoints
         // Обращение администратора к чужому вложению — событие повышенной
         // чувствительности, попадает в журнал. Своё вложение менеджер открывает
         // десятки раз за день, засорять этим аудит незачем.
-        if (!isOwner)
+        if (!access.IsOwner)
         {
             await auditTrail.RecordAsync(
                 new AuditEntry
                 {
-                    ManagerId = currentManagerId,
-                    ImpersonatedManagerId = attachment.OwnerManagerId,
+                    ManagerId = managerId,
+                    ImpersonatedManagerId = access.OwnerManagerId,
                     Action = AuditAction.MediaDownloaded,
-                    Subject = attachment.FileName,
+                    Subject = access.FileName,
                     EntityType = "MediaAttachment",
                     EntityId = id,
-                    DetailsJson = $$"""{"dialogId":"{{attachment.DialogId}}"}""",
+                    DetailsJson = $$"""{"dialogId":"{{access.DialogId}}"}""",
                     IpAddress = httpContext.Connection.RemoteIpAddress?.ToString(),
                 },
                 cancellationToken);
         }
 
-        return Results.Stream(
-            file.Content,
-            attachment.MimeType ?? file.ContentType,
-            attachment.FileName);
+        return Results.Stream(file.Content, access.MimeType ?? file.ContentType, access.FileName);
     }
 }

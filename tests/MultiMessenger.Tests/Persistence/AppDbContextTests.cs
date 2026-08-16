@@ -7,16 +7,8 @@ using MultiMessenger.Core.Enums;
 namespace MultiMessenger.Tests.Persistence;
 
 [Collection(PostgresCollection.Name)]
-public class AppDbContextTests(PostgresFixture postgres) : IAsyncLifetime
+public class AppDbContextTests(PostgresFixture postgres)
 {
-    public async Task InitializeAsync()
-    {
-        await using var dbContext = postgres.CreateDbContext();
-        await dbContext.Database.MigrateAsync();
-    }
-
-    public Task DisposeAsync() => Task.CompletedTask;
-
     [Fact]
     public async Task MigrationsApplyToEmptyDatabase()
     {

@@ -5,9 +5,9 @@ using Testcontainers.PostgreSql;
 namespace MultiMessenger.Tests.Persistence;
 
 /// <summary>
-/// Поднимает пустой PostgreSQL в контейнере на время прогона. Проверять модель
-/// на разработческой БД бессмысленно: там миграции уже применены, и ошибка
-/// «работает только на существующей схеме» останется незамеченной.
+/// Поднимает пустой PostgreSQL в контейнере на время прогона и применяет миграции.
+/// Проверять модель на разработческой БД бессмысленно: там миграции уже применены,
+/// и ошибка «работает только на существующей схеме» останется незамеченной.
 /// </summary>
 public class PostgresFixture : IAsyncLifetime
 {
@@ -17,7 +17,14 @@ public class PostgresFixture : IAsyncLifetime
 
     public string ConnectionString => _container.GetConnectionString();
 
-    public async Task InitializeAsync() => await _container.StartAsync();
+    public async Task InitializeAsync()
+    {
+        await _container.StartAsync();
+
+        // Миграции применяются один раз на всю коллекцию, а не в каждом классе тестов.
+        await using var dbContext = CreateDbContext();
+        await dbContext.Database.MigrateAsync();
+    }
 
     public async Task DisposeAsync() => await _container.DisposeAsync();
 
