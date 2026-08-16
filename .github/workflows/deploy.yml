@@ -93,18 +93,24 @@ jobs:
 
             echo "$REGISTRY_TOKEN" | docker login ghcr.io -u "$REGISTRY_USER" --password-stdin
 
-            # Запоминаем, что работает сейчас, — на случай отката.
-            PREVIOUS=$(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE:latest" 2>/dev/null || echo "")
-            echo "Текущий образ: ${PREVIOUS:-отсутствует}"
+            # Запоминаем образ работающего контейнера — на случай отката.
+            # Именно контейнера, а не тега latest: тег на сервер не тянется,
+            # и откатываться было бы не на что.
+            PREVIOUS=$(docker inspect --format '{{.Config.Image}}' mm-app 2>/dev/null || echo "")
+            echo "Текущий образ: ${PREVIOUS:-отсутствует, это первая выкатка}"
 
             export MULTIMESSENGER_IMAGE="$IMAGE:$SHA"
             docker compose --file docker-compose.prod.yml pull app
             docker compose --file docker-compose.prod.yml up --detach --no-deps app
 
+            # Порт берётся из .env сервера — тот же, что публикует compose.
+            APP_PORT=$(grep -E '^APP_PORT=' .env 2>/dev/null | cut -d= -f2 || true)
+            APP_PORT=${APP_PORT:-8080}
+
             # Ждём, пока приложение прогонит миграции и отчитается о готовности.
             READY=0
             for attempt in $(seq 1 30); do
-              if curl --fail --silent --max-time 5 http://127.0.0.1:8080/health/ready > /dev/null; then
+              if curl --fail --silent --max-time 5 "http://127.0.0.1:${APP_PORT}/health/ready" > /dev/null; then
                 READY=1
                 break
               fi
