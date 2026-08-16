@@ -56,7 +56,11 @@ public class ProjectDependencyTests
 
     private static IEnumerable<string> ReferencedProjects(XDocument project) =>
         project.Descendants("ProjectReference")
-            .Select(reference => Path.GetFileNameWithoutExtension(reference.Attribute("Include")?.Value ?? string.Empty))
+            .Select(reference => reference.Attribute("Include")?.Value ?? string.Empty)
+            // MSBuild пишет пути с обратным слешем независимо от системы, а на Linux
+            // он разделителем не считается — GetFileNameWithoutExtension вернул бы
+            // строку целиком. Нормализуем сами.
+            .Select(include => Path.GetFileNameWithoutExtension(include.Replace('\\', '/')))
             .Order();
 
     private static string FindRepositoryRoot()

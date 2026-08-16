@@ -1,5 +1,3 @@
-using System.Text;
-
 namespace MultiMessenger.Core.Identity;
 
 /// <summary>
@@ -75,18 +73,6 @@ public static class PhoneNumber
     /// <summary>Нормализован ли номер уже сейчас — для проверок в тестах и валидаторах.</summary>
     public static bool IsValid(string? input) => TryNormalize(input, out _);
 
-    private static string ExtractDigits(string input)
-    {
-        var digits = new StringBuilder(input.Length);
-
-        foreach (var character in input)
-        {
-            if (char.IsAsciiDigit(character))
-            {
-                digits.Append(character);
-            }
-        }
-
-        return digits.ToString();
-    }
+    private static string ExtractDigits(string input) =>
+        new(input.Where(char.IsAsciiDigit).ToArray());
 }

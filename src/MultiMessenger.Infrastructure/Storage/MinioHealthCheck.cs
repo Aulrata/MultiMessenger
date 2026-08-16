@@ -18,6 +18,10 @@ public class MinioHealthCheck(IAmazonS3 s3Client, IOptions<MinioOptions> options
     {
         var bucketName = options.Value.BucketName;
 
+        // Ловится только ошибка самого хранилища — ради внятного сообщения.
+        // Всё остальное (сеть, таймаут, кривая конфигурация) перехватывает
+        // HealthCheckService и тоже превращает в Unhealthy, поэтому ещё один
+        // catch на Exception здесь был бы дублированием.
         try
         {
             await s3Client.GetBucketLocationAsync(bucketName, cancellationToken);
@@ -27,10 +31,6 @@ public class MinioHealthCheck(IAmazonS3 s3Client, IOptions<MinioOptions> options
         catch (AmazonS3Exception exception)
         {
             return HealthCheckResult.Unhealthy($"Бакет {bucketName} недоступен", exception);
-        }
-        catch (Exception exception)
-        {
-            return HealthCheckResult.Unhealthy("Нет связи с хранилищем", exception);
         }
     }
 }
