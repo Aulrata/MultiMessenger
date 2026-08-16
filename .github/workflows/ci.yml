@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Установка .NET
         uses: actions/setup-dotnet@v4
@@ -57,7 +57,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Без buildx сборка идёт стандартным драйвером docker, который не умеет
       # выгружать кэш в хранилище GitHub Actions, — на этом задача и падала.
