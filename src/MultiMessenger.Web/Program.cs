@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using MultiMessenger.Core.Auditing;
 using MultiMessenger.Infrastructure;
 using MultiMessenger.Infrastructure.Identity;
@@ -24,6 +25,12 @@ try
     // на сервере — из переменных окружения вида Minio__SecretKey, ConnectionStrings__Postgres.
     builder.Services.AddInfrastructure(builder.Configuration);
     builder.Services.AddManagerAuthentication();
+
+    // Живость и готовность разделены: контейнеру нужно знать, что процесс не завис,
+    // а балансировщику и деплою — что приложение реально способно работать.
+    builder.Services.AddHealthChecks()
+        .AddDbContextCheck<AppDbContext>("postgres", tags: ["ready"])
+        .AddCheck<MinioHealthCheck>("minio", tags: ["ready"]);
 
     builder.Services.AddRazorComponents()
         .AddInteractiveServerComponents();
@@ -52,6 +59,18 @@ try
         .AddInteractiveServerRenderMode();
 
     app.MapMediaEndpoints();
+
+    // Процесс жив и отвечает. Без обращений к БД и хранилищу: при недоступной базе
+    // контейнер перезапускать бессмысленно, перезапуск её не починит.
+    app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false })
+        .AllowAnonymous();
+
+    // Зависимости на месте, можно пускать трафик. Эту ручку дёргает деплой.
+    app.MapHealthChecks("/health/ready", new HealthCheckOptions
+        {
+            Predicate = check => check.Tags.Contains("ready"),
+        })
+        .AllowAnonymous();
 
     // Выход — обязательно POST с antiforgery-токеном: по GET-ссылке чужой сайт
     // мог бы разлогинивать сотрудника картинкой.

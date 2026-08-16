@@ -1,0 +1,13 @@
+[Unit]
+Description=Резервное копирование MultiMessenger
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/multimessenger
+ExecStart=/opt/multimessenger/backup.sh
+
+# Неудачное копирование должно быть заметно, а не теряться в journalctl.
+# Раскомментировать, когда будет настроена отправка уведомлений:
+# OnFailure=notify-admin@%n.service

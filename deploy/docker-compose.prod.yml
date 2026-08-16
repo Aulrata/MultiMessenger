@@ -1,0 +1,83 @@
+name: multimessenger
+
+# Боевой стек. Кладётся на сервер в каталог, указанный в секрете DEPLOY_PATH,
+# рядом с файлом .env (создаётся вручную, в репозиторий не попадает).
+#
+# Отличия от локального docker-compose.yml:
+#   - приложение берётся готовым образом из реестра, а не собирается на месте;
+#   - тег образа подставляется деплоем через MULTIMESSENGER_IMAGE;
+#   - веб-консоль MinIO наружу не публикуется.
+
+services:
+
+  postgres:
+    image: postgres:16
+    container_name: mm-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  minio:
+    image: minio/minio
+    container_name: mm-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  app:
+    # Тег подставляет пайплайн; latest — запасной вариант для ручного запуска.
+    image: ${MULTIMESSENGER_IMAGE:-ghcr.io/aulrata/multimessenger:latest}
+    container_name: mm-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      Minio__Endpoint: "minio:9000"
+      Minio__AccessKey: ${MINIO_ROOT_USER}
+      Minio__SecretKey: ${MINIO_ROOT_PASSWORD}
+      Minio__UseSsl: "false"
+      Telegram__ApiId: ${TELEGRAM_API_ID:-0}
+      Telegram__ApiHash: ${TELEGRAM_API_HASH:-}
+      # На сервере в Германии прокси не нужен.
+      Telegram__UseProxy: "false"
+      Seq__ServerUrl: ${SEQ_SERVER_URL:-}
+      Seed__AdminPhoneNumber: ${SEED_ADMIN_PHONE:-}
+      Seed__AdminPassword: ${SEED_ADMIN_PASSWORD:-}
+    ports:
+      # Наружу приложение выставляет обратный прокси, который терминирует TLS.
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - sessions:/data/sessions
+      - logs:/app/logs
+
+volumes:
+  postgres-data:
+  minio-data:
+  sessions:
+  logs:

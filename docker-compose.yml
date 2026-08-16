@@ -1,8 +1,10 @@
 name: multimessenger
 
-# Инфраструктура для локальной разработки: PostgreSQL и MinIO.
-# Само приложение на этом этапе запускается через `dotnet run` — так проще дебажить.
-# Контейнеризация MultiMessenger.Web добавляется в разделе 1.7 плана.
+# Инфраструктура и приложение.
+#
+# Приложение вынесено в профиль `app`: при разработке его удобнее запускать
+# через `dotnet run`, а контейнер поднимать только когда нужно проверить сборку
+# целиком — `docker compose --profile app up -d`.
 #
 # Значения берутся из файла .env (см. .env.example). Порты публикуются только
 # на 127.0.0.1, чтобы БД и хранилище не торчали в локальную сеть.
@@ -50,6 +52,35 @@ services:
       retries: 5
       start_period: 20s
 
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: multimessenger:local
+    container_name: mm-app
+    restart: unless-stopped
+    profiles: [app]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment:
+      # Внутри docker-сети хосты — это имена сервисов, а не localhost.
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      Minio__Endpoint: "minio:9000"
+      Minio__AccessKey: ${MINIO_ROOT_USER}
+      Minio__SecretKey: ${MINIO_ROOT_PASSWORD}
+      Minio__UseSsl: "false"
+      Seed__AdminPhoneNumber: ${SEED_ADMIN_PHONE:-}
+      Seed__AdminPassword: ${SEED_ADMIN_PASSWORD:-}
+      ASPNETCORE_ENVIRONMENT: Production
+    ports:
+      - "127.0.0.1:${APP_PORT:-8080}:8080"
+    volumes:
+      # Файлы сессий Telegram/WhatsApp переживают пересоздание контейнера.
+      - sessions:/data/sessions
+
   # Просмотр структурированных логов. Не входит в основной стек — поднимается отдельно:
   #   docker compose --profile observability up -d
   # Приложение начнёт отправлять события, когда задан Seq:ServerUrl (по умолчанию пусто).
@@ -71,3 +102,4 @@ volumes:
   postgres-data:
   minio-data:
   seq-data:
+  sessions:
