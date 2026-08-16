@@ -7,6 +7,7 @@ using MultiMessenger.Core.Auditing;
 using MultiMessenger.Core.Identity;
 using MultiMessenger.Core.Messaging;
 using MultiMessenger.Core.Storage;
+using MultiMessenger.Infrastructure.Messengers;
 using MultiMessenger.Infrastructure.Messengers.Telegram;
 using MultiMessenger.Infrastructure.Auditing;
 using MultiMessenger.Infrastructure.Configuration;
@@ -42,6 +43,12 @@ public static class InfrastructureServiceCollectionExtensions
         // Фабрики коннекторов — синглтоны: сами по себе они без состояния,
         // состояние живёт в созданных ими подключениях.
         services.AddSingleton<IMessengerConnectorFactory, TelegramConnectorFactory>();
+
+        // Живые подключения и приёмник событий переживают запросы, поэтому синглтоны.
+        // Область для работы с БД они создают себе сами на каждое событие.
+        services.AddSingleton<IMessengerEventSink, AccountEventSink>();
+        services.AddSingleton<AccountConnectionManager>();
+        services.AddHostedService<AccountConnectionWorker>();
 
         return services;
     }

@@ -16,16 +16,18 @@ public abstract class FakeConnectorBase : IMessengerConnector
 
     public abstract PlatformCapabilities Capabilities { get; }
 
-    public Guid MessengerAccountId { get; } = Guid.CreateVersion7();
+    public Guid MessengerAccountId { get; init; } = Guid.CreateVersion7();
 
     public abstract Task<LoginStep> BeginLoginAsync(LoginRequest request, CancellationToken cancellationToken = default);
 
     public abstract Task<LoginStep> ContinueLoginAsync(LoginAnswer answer, CancellationToken cancellationToken = default);
 
-    public Task<ConnectionState> ConnectExistingAsync(CancellationToken cancellationToken = default) =>
+    // Виртуальные намеренно: наследники подменяют поведение соединения,
+    // а вызовы идут через интерфейс — сокрытие через new там не сработает.
+    public virtual Task<ConnectionState> ConnectExistingAsync(CancellationToken cancellationToken = default) =>
         Task.FromResult(ConnectionState.Connected);
 
-    public Task DisconnectAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+    public virtual Task DisconnectAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 
     public Task<DeliveryResult> SendMessageAsync(OutgoingMessage message, CancellationToken cancellationToken = default) =>
         Task.FromResult(DeliveryResult.Success(message.MessageId, "platform-1", DateTimeOffset.UtcNow));
@@ -46,7 +48,7 @@ public abstract class FakeConnectorBase : IMessengerConnector
         yield break;
     }
 
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    public virtual ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
     protected static LoginStep.Completed CompletedWith(string platformUserId) =>
         new(new PlatformAccountInfo { PlatformUserId = platformUserId });
