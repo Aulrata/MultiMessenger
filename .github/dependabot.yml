@@ -1,10 +1,15 @@
 version: 2
 
+# Ветка по умолчанию — main, но вливание в неё запускает выкатку на сервер.
+# Поэтому обновления идут в dev и попадают в прод обычным порядком,
+# вместе с остальными изменениями, а не отдельным перезапуском на каждый пакет.
+
 updates:
   # NuGet-пакеты. Обновления группируются, чтобы не получать десять
   # почти одинаковых pull request каждый понедельник.
   - package-ecosystem: nuget
     directory: /
+    target-branch: dev
     schedule:
       interval: weekly
       day: monday
@@ -27,12 +32,20 @@ updates:
       - dependency-name: FluentAssertions
         versions: [">=8.0.0"]
 
+  # Версии действий тоже группируются: обновление пяти action'ов —
+  # это одна правка в двух файлах, а не пять отдельных разборов.
   - package-ecosystem: github-actions
     directory: /
+    target-branch: dev
     schedule:
       interval: monthly
+    groups:
+      actions:
+        patterns:
+          - "*"
 
   - package-ecosystem: docker
     directory: /
+    target-branch: dev
     schedule:
       interval: monthly

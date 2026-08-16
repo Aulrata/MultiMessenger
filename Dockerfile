@@ -32,12 +32,13 @@ RUN apt-get update \
 
 COPY --from=build /app .
 
-# Директория сессий Telegram/WhatsApp — на неё монтируется volume.
+# Директории под данные — на них монтируются volume'ы.
 # Права выставляются до смены пользователя, иначе приложение не сможет туда писать.
-RUN mkdir -p /data/sessions && chown -R $APP_UID:$APP_UID /data
+RUN mkdir -p /data/sessions /data/keys && chown -R $APP_UID:$APP_UID /data
 
 ENV ASPNETCORE_HTTP_PORTS=8080 \
-    Storage__SessionsBasePath=/data/sessions
+    Storage__SessionsBasePath=/data/sessions \
+    Storage__DataProtectionKeysPath=/data/keys
 
 EXPOSE 8080
 

@@ -89,7 +89,8 @@ jobs:
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: ${{ secrets.DEPLOY_PORT || 22 }}
-          script_stop: true
+          # Прерывание на первой ошибке обеспечивает set -euo pipefail внутри
+          # скрипта: входа script_stop у действия нет, он молча игнорировался.
           envs: IMAGE,SHA,REGISTRY_TOKEN,REGISTRY_USER
           script: |
             set -euo pipefail

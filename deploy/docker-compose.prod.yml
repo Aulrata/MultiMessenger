@@ -76,10 +76,13 @@ services:
       - "127.0.0.1:${APP_PORT:-8080}:8080"
     volumes:
       - sessions:/data/sessions
+      # Ключи подписи кук: без отдельного тома выкатка разлогинивала бы всех.
+      - dataprotection:/data/keys
       - logs:/app/logs
 
 volumes:
   postgres-data:
   minio-data:
   sessions:
+  dataprotection:
   logs:
