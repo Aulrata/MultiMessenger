@@ -5,7 +5,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using MultiMessenger.Core.Auditing;
 using MultiMessenger.Core.Identity;
+using MultiMessenger.Core.Messaging;
 using MultiMessenger.Core.Storage;
+using MultiMessenger.Infrastructure.Messengers.Telegram;
 using MultiMessenger.Infrastructure.Auditing;
 using MultiMessenger.Infrastructure.Configuration;
 using MultiMessenger.Infrastructure.Identity;
@@ -36,6 +38,10 @@ public static class InfrastructureServiceCollectionExtensions
             MinioSetup.CreateClient(provider.GetRequiredService<IOptions<MinioOptions>>().Value));
         services.AddScoped<IFileStorage, MinioFileStorage>();
         services.AddScoped<MediaAccessResolver>();
+
+        // Фабрики коннекторов — синглтоны: сами по себе они без состояния,
+        // состояние живёт в созданных ими подключениях.
+        services.AddSingleton<IMessengerConnectorFactory, TelegramConnectorFactory>();
 
         return services;
     }
