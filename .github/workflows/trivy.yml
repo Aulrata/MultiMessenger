@@ -45,7 +45,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Сканирование, отчёт в SARIF
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: multimessenger:scan
           format: sarif
@@ -66,7 +66,7 @@ jobs:
       # исправление. Иначе проверка краснела бы на каждую дырку в Debian,
       # которую нам всё равно нечем закрыть, и на неё перестали бы смотреть.
       - name: Проверка критических уязвимостей
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: multimessenger:scan
           format: table
