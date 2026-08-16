@@ -76,6 +76,10 @@ jobs:
     needs: publish
     runs-on: ubuntu-latest
     environment: production
+    # Токен уезжает на сервер для docker login в GHCR — образ там приватный.
+    permissions:
+      contents: read
+      packages: read
 
     steps:
       - name: Обновление стека по SSH
@@ -101,7 +105,11 @@ jobs:
 
             export MULTIMESSENGER_IMAGE="$IMAGE:$SHA"
             docker compose --file docker-compose.prod.yml pull app
-            docker compose --file docker-compose.prod.yml up --detach --no-deps app
+
+            # Поднимается весь стек, а не только app: при первой выкатке базы
+            # и хранилища на сервере ещё нет. Уже работающие контейнеры compose
+            # не трогает — их описание не менялось.
+            docker compose --file docker-compose.prod.yml up --detach
 
             # Порт берётся из .env сервера — тот же, что публикует compose.
             APP_PORT=$(grep -E '^APP_PORT=' .env 2>/dev/null | cut -d= -f2 || true)
