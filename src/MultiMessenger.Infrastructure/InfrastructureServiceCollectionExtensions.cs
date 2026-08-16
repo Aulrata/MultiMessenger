@@ -48,7 +48,11 @@ public static class InfrastructureServiceCollectionExtensions
         // Область для работы с БД они создают себе сами на каждое событие.
         services.AddSingleton<IMessengerEventSink, AccountEventSink>();
         services.AddSingleton<AccountConnectionManager>();
+        services.AddSingleton<PendingLoginStore>();
         services.AddHostedService<AccountConnectionWorker>();
+        services.AddHostedService<PendingLoginCleanupWorker>();
+
+        services.AddScoped<MessengerAccountService>();
 
         return services;
     }
