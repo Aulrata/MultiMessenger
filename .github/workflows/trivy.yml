@@ -27,15 +27,15 @@ jobs:
       security-events: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Настройка Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       # Образ собирается локально и не публикуется: на pull request проверять
       # надо то, что получится после вливания, а в реестре этого ещё нет.
       - name: Сборка образа
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: false
@@ -55,7 +55,7 @@ jobs:
 
       # Результаты уезжают во вкладку Security рядом с находками CodeQL.
       - name: Публикация результатов
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: trivy-results.sarif
