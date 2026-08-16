@@ -30,6 +30,33 @@ public class TelegramSessionStoreTests : IDisposable
         Path.GetFileName(path).Should().NotContain("+").And.NotContain("7900");
     }
 
+    /// <summary>
+    /// Файл обязан лежать ровно в заданном каталоге. Проверка на случай, если
+    /// когда-нибудь имя начнут собирать не только из идентификатора.
+    /// </summary>
+    [Fact]
+    public void SessionFileStaysInsideTheConfiguredDirectory()
+    {
+        var path = TelegramSessionStore.GetSessionPath(_basePath, Guid.CreateVersion7());
+
+        Path.GetDirectoryName(path).Should().Be(Path.GetFullPath(_basePath));
+        Path.IsPathFullyQualified(path).Should().BeTrue();
+    }
+
+    /// <summary>Относительный базовый путь разворачивается в абсолютный.</summary>
+    [Fact]
+    public void RelativeBasePathIsResolved()
+    {
+        var relative = Path.Combine(".", Path.GetFileName(_basePath));
+
+        var path = TelegramSessionStore.GetSessionPath(relative, Guid.CreateVersion7());
+
+        path.Should().NotContain("..").And.NotContain($".{Path.DirectorySeparatorChar}{Path.GetFileName(_basePath)}{Path.DirectorySeparatorChar}");
+        Path.IsPathFullyQualified(path).Should().BeTrue();
+
+        Directory.Delete(Path.GetDirectoryName(path)!, recursive: true);
+    }
+
     [Fact]
     public void DifferentAccountsGetDifferentFiles()
     {

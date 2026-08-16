@@ -17,7 +17,18 @@ public static class TelegramSessionStore
         var directory = Path.GetFullPath(basePath);
         Directory.CreateDirectory(directory);
 
-        return Path.Combine(directory, $"{messengerAccountId:N}.session");
+        var path = Path.GetFullPath(Path.Combine(directory, $"{messengerAccountId:N}.session"));
+
+        // Имя собрано из Guid и вырваться из каталога не может. Проверка стоит здесь
+        // не поэтому: файл сессии равносилен полному доступу к аккаунту менеджера,
+        // и если однажды имя начнут собирать из чего-то другого, ошибка вскроется
+        // сразу, а не когда сессии окажутся не там, где их ждут.
+        if (Path.GetDirectoryName(path) != Path.TrimEndingDirectorySeparator(directory))
+        {
+            throw new InvalidOperationException($"Путь к файлу сессии вышел за пределы каталога {directory}");
+        }
+
+        return path;
     }
 
     /// <summary>
