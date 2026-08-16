@@ -1,0 +1,201 @@
+@page "/admin/managers"
+@attribute [Authorize(Policy = AuthorizationPolicies.Administration)]
+
+@using System.ComponentModel.DataAnnotations
+@using MultiMessenger.Core.Entities
+@using MultiMessenger.Infrastructure.Identity
+
+@inject ManagerDirectory Directory
+
+@* Страница статическая. Интерактивность здесь ничего не даёт, а HttpContext нужен:
+   в журнал аудита пишется IP-адрес, а он доступен только в рамках запроса —
+   после установления цепи Blazor контекста уже нет. *@
+
+<PageTitle>Сотрудники — MultiMessenger</PageTitle>
+
+<h1 class="h4 mb-4">Сотрудники</h1>
+
+<div class="row g-4">
+    <div class="col-lg-7">
+        <table class="table align-middle">
+            <thead>
+                <tr>
+                    <th scope="col">ФИО</th>
+                    <th scope="col">Телефон</th>
+                    <th scope="col">Роль</th>
+                    <th scope="col">Статус</th>
+                    <th scope="col"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var manager in _managers)
+                {
+                    <tr class="@(manager.IsActive ? null : "text-body-secondary")">
+                        <td>@manager.FullName</td>
+                        <td>@manager.PhoneNumber</td>
+                        <td>@(manager.Role is ManagerRole.Admin ? "Администратор" : "Менеджер")</td>
+                        <td>@(manager.IsActive ? "Активен" : "Отключён")</td>
+                        <td class="text-end">
+                            @if (manager.Id == _currentManagerId)
+                            {
+                                <span class="small text-body-secondary">это вы</span>
+                            }
+                            else
+                            {
+                                <form method="post" @formname="@($"toggle-{manager.Id}")"
+                                      @onsubmit="() => SetActiveAsync(manager.Id, !manager.IsActive)">
+                                    <AntiforgeryToken />
+                                    <button type="submit"
+                                            class="btn btn-sm @(manager.IsActive ? "btn-outline-danger" : "btn-outline-secondary")">
+                                        @(manager.IsActive ? "Отключить" : "Включить")
+                                    </button>
+                                </form>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <div class="col-lg-5">
+        <div class="card">
+            <div class="card-body">
+                <h2 class="h6 mb-3">Новый сотрудник</h2>
+
+                <EditForm Model="Input" method="post" OnValidSubmit="CreateAsync" FormName="create-manager">
+                    <DataAnnotationsValidator />
+
+                    @if (_message is not null)
+                    {
+                        <div class="alert @(_messageIsError ? "alert-danger" : "alert-success") py-2">@_message</div>
+                    }
+
+                    <div class="mb-3">
+                        <label for="fullName" class="form-label">ФИО</label>
+                        <InputText id="fullName" class="form-control" @bind-Value="Input.FullName" />
+                        <ValidationMessage For="() => Input.FullName" class="text-danger small" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="newPhone" class="form-label">Рабочий номер</label>
+                        <InputText id="newPhone" class="form-control" @bind-Value="Input.PhoneNumber"
+                                   placeholder="+7 900 123-45-67" />
+                        <ValidationMessage For="() => Input.PhoneNumber" class="text-danger small" />
+                        <div class="form-text">Он же логин и номер для подключения Telegram и WhatsApp.</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="newPassword" class="form-label">Пароль</label>
+                        <InputText id="newPassword" class="form-control" @bind-Value="Input.Password" />
+                        <ValidationMessage For="() => Input.Password" class="text-danger small" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="role" class="form-label">Роль</label>
+                        <InputSelect id="role" class="form-select" @bind-Value="Input.Role">
+                            <option value="@ManagerRole.Manager">Менеджер</option>
+                            <option value="@ManagerRole.Admin">Администратор</option>
+                        </InputSelect>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">Создать</button>
+                </EditForm>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<Manager> _managers = [];
+    private Guid? _currentManagerId;
+    private string? _message;
+    private bool _messageIsError;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    private CreateManagerInput? _input;
+
+    // См. комментарий в Login.razor: инициализатор свойства здесь вызывает BL0008.
+    [SupplyParameterFromForm]
+    private CreateManagerInput Input
+    {
+        get => _input ??= new CreateManagerInput();
+        set => _input = value;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _currentManagerId = HttpContext.User.GetManagerId();
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync() => _managers = await Directory.ListAsync();
+
+    private async Task CreateAsync()
+    {
+        if (_currentManagerId is null)
+        {
+            return;
+        }
+
+        var result = await Directory.CreateAsync(
+            Input.FullName,
+            Input.PhoneNumber,
+            Input.Password,
+            Input.Role,
+            _currentManagerId.Value,
+            CurrentIpAddress);
+
+        if (result.Succeeded)
+        {
+            _message = $"Сотрудник {result.Manager!.FullName} создан";
+            _messageIsError = false;
+            Input = new CreateManagerInput();
+        }
+        else
+        {
+            _message = result.Failure switch
+            {
+                ManagerCreationFailure.InvalidPhoneNumberFormat => "Номер телефона в нераспознанном формате",
+                ManagerCreationFailure.PhoneNumberAlreadyUsed => "Сотрудник с таким номером уже есть",
+                ManagerCreationFailure.FullNameRequired => "Укажите ФИО",
+                ManagerCreationFailure.PasswordTooShort =>
+                    $"Пароль короче {ManagerDirectory.MinimumPasswordLength} символов",
+                _ => "Не удалось создать сотрудника",
+            };
+            _messageIsError = true;
+        }
+
+        await ReloadAsync();
+    }
+
+    private async Task SetActiveAsync(Guid managerId, bool isActive)
+    {
+        if (_currentManagerId is null)
+        {
+            return;
+        }
+
+        await Directory.SetActiveAsync(managerId, isActive, _currentManagerId.Value, CurrentIpAddress);
+        await ReloadAsync();
+    }
+
+    private string? CurrentIpAddress => HttpContext.Connection.RemoteIpAddress?.ToString();
+
+    private sealed class CreateManagerInput
+    {
+        [Required(ErrorMessage = "Укажите ФИО")]
+        public string FullName { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Укажите номер телефона")]
+        public string PhoneNumber { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Укажите пароль")]
+        [MinLength(ManagerDirectory.MinimumPasswordLength, ErrorMessage = "Не короче 8 символов")]
+        public string Password { get; set; } = string.Empty;
+
+        public ManagerRole Role { get; set; } = ManagerRole.Manager;
+    }
+}

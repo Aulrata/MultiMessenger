@@ -1,0 +1,50 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # Еженедельный прогон по расписанию: база уязвимостей пополняется,
+  # и код, чистый в марте, может перестать быть чистым в апреле.
+  schedule:
+    - cron: '0 4 * * 1'
+  workflow_dispatch:
+
+jobs:
+  analyze:
+    name: Анализ C#
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      security-events: write
+      packages: read
+      actions: read
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Установка .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Инициализация CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: csharp
+          # security-and-quality шире набора по умолчанию: кроме уязвимостей
+          # ловит и подозрительные места вроде проглоченных исключений.
+          queries: security-and-quality
+
+      # Сборка вручную, а не autobuild: проект использует Central Package Management
+      # и .NET 10, автоопределение с этим справляется не всегда.
+      - name: Сборка
+        run: dotnet build --configuration Release
+
+      - name: Анализ
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:csharp

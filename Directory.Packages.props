@@ -1,24 +1,43 @@
 <Project>
-
   <!-- Central Package Management: версии всех NuGet-пакетов задаются только здесь.
        В .csproj остаются <PackageReference Include="..." /> без атрибута Version —
        попытка указать версию на месте вызовет ошибку сборки NU1008. -->
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
-
   <!-- Данные: PostgreSQL через EF Core, MinIO через S3-совместимый клиент -->
   <ItemGroup>
     <PackageVersion Include="AWSSDK.S3" Version="4.0.102.1" />
+    <!-- EF Core прописан явно, хотя приезжает и с Npgsql-провайдером: провайдер тянет
+         версию 10.0.4, и без явной ссылки тестовый проект собирался против неё,
+         а Infrastructure — против 10.0.11 из пакета Design (MSB3277). -->
+    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.11" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Identity.Core" Version="10.0.11" />
     <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+    <PackageVersion Include="Testcontainers.Minio" Version="4.14.0" />
   </ItemGroup>
-
+  <!-- Конфигурация и DI. Версии держим в одной линии с остальным Microsoft.Extensions,
+       который приезжает транзитивно вместе с EF Core. -->
+  <ItemGroup>
+    <PackageVersion Include="Microsoft.Extensions.Configuration" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Options.DataAnnotations" Version="10.0.11" />
+  </ItemGroup>
+  <!-- Логирование. Serilog.AspNetCore приносит с собой sink'и Console и File
+       и форматтер Serilog.Formatting.Compact — отдельные пакеты для них не нужны. -->
+  <ItemGroup>
+    <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />
+    <PackageVersion Include="Serilog.Sinks.Seq" Version="9.1.0" />
+  </ItemGroup>
   <!-- Клиенты мессенджеров -->
   <ItemGroup>
     <PackageVersion Include="WTelegramClient" Version="4.4.7" />
   </ItemGroup>
-
   <!-- Тесты.
        FluentAssertions намеренно закреплён на 7.x: начиная с 8.0 библиотека
        распространяется по платной лицензии Xceed для коммерческого использования. -->
@@ -31,5 +50,4 @@
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.4" />
   </ItemGroup>
-
 </Project>

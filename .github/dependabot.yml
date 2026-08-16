@@ -1,0 +1,38 @@
+version: 2
+
+updates:
+  # NuGet-пакеты. Обновления группируются, чтобы не получать десять
+  # почти одинаковых pull request каждый понедельник.
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      microsoft:
+        patterns:
+          - "Microsoft.*"
+          - "System.*"
+      testing:
+        patterns:
+          - "xunit*"
+          - "FluentAssertions"
+          - "NSubstitute"
+          - "Testcontainers*"
+          - "coverlet*"
+    ignore:
+      # Начиная с 8.0 требует платную лицензию для коммерческого использования —
+      # обновляться нельзя, см. комментарий в Directory.Packages.props.
+      - dependency-name: FluentAssertions
+        versions: [">=8.0.0"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: monthly

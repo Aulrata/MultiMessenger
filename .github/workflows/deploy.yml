@@ -1,0 +1,144 @@
+name: Deploy
+
+# Срабатывает при вливании pull request в main.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Два деплоя одновременно на один сервер — гарантированная гонка.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  test:
+    name: Тесты перед выкаткой
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Установка .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Тесты
+        run: dotnet test --configuration Release
+
+  publish:
+    name: Публикация образа
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Настройка Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Вход в GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Имя образа в реестре обязано быть в нижнем регистре,
+      # а github.repository повторяет регистр названия репозитория.
+      - name: Подготовка имени образа
+        id: meta
+        run: echo "image=${REGISTRY}/${IMAGE_NAME,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Сборка и публикация
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.image }}:latest
+            ${{ steps.meta.outputs.image }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Выкатка на сервер
+    needs: publish
+    runs-on: ubuntu-latest
+    environment: production
+    # Токен уезжает на сервер для docker login в GHCR — образ там приватный.
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      - name: Обновление стека по SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          script_stop: true
+          envs: IMAGE,SHA,REGISTRY_TOKEN,REGISTRY_USER
+          script: |
+            set -euo pipefail
+            cd "${{ secrets.DEPLOY_PATH }}"
+
+            echo "$REGISTRY_TOKEN" | docker login ghcr.io -u "$REGISTRY_USER" --password-stdin
+
+            # Запоминаем образ работающего контейнера — на случай отката.
+            # Именно контейнера, а не тега latest: тег на сервер не тянется,
+            # и откатываться было бы не на что.
+            PREVIOUS=$(docker inspect --format '{{.Config.Image}}' mm-app 2>/dev/null || echo "")
+            echo "Текущий образ: ${PREVIOUS:-отсутствует, это первая выкатка}"
+
+            export MULTIMESSENGER_IMAGE="$IMAGE:$SHA"
+            docker compose --file docker-compose.prod.yml pull app
+
+            # Поднимается весь стек, а не только app: при первой выкатке базы
+            # и хранилища на сервере ещё нет. Уже работающие контейнеры compose
+            # не трогает — их описание не менялось.
+            docker compose --file docker-compose.prod.yml up --detach
+
+            # Порт берётся из .env сервера — тот же, что публикует compose.
+            APP_PORT=$(grep -E '^APP_PORT=' .env 2>/dev/null | cut -d= -f2 || true)
+            APP_PORT=${APP_PORT:-8080}
+
+            # Ждём, пока приложение прогонит миграции и отчитается о готовности.
+            READY=0
+            for attempt in $(seq 1 30); do
+              if curl --fail --silent --max-time 5 "http://127.0.0.1:${APP_PORT}/health/ready" > /dev/null; then
+                READY=1
+                break
+              fi
+              sleep 5
+            done
+
+            if [ "$READY" -ne 1 ]; then
+              echo "Приложение не пришло в готовность, откатываюсь"
+              if [ -n "$PREVIOUS" ]; then
+                export MULTIMESSENGER_IMAGE="$PREVIOUS"
+                docker compose --file docker-compose.prod.yml up --detach --no-deps app
+              fi
+              docker compose --file docker-compose.prod.yml logs --tail 100 app
+              exit 1
+            fi
+
+            echo "Выкатка завершена: $IMAGE:$SHA"
+            docker image prune --force --filter "until=168h"
+        env:
+          IMAGE: ${{ needs.publish.outputs.image }}
+          SHA: ${{ github.sha }}
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}

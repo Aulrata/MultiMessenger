@@ -4,9 +4,11 @@
 ## Get latest from https://github.com/github/gitignore/blob/master/VisualStudio.gitignore
 .idea
 .DS_Store
-/src/RomanTourNotification/credentials.json
-/Test
-/deploy
+
+# MultiMessenger: локальные секреты и данные, которые не должны попадать в репозиторий
+.env
+/sessions/
+
 # User-specific files
 *.rsuser
 *.suo

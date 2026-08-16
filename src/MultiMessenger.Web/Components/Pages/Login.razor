@@ -1,0 +1,120 @@
+@page "/login"
+@layout BlankLayout
+
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Authentication.Cookies
+@using MultiMessenger.Infrastructure.Identity
+
+@inject ManagerAuthenticator Authenticator
+@inject NavigationManager Navigation
+
+@* Страница намеренно статическая: SignInAsync требует HttpContext, которого
+   у интерактивного компонента нет. *@
+
+<PageTitle>Вход — MultiMessenger</PageTitle>
+
+<div class="card shadow-sm" style="width: 24rem;">
+    <div class="card-body p-4">
+        <h1 class="h4 mb-4 text-center">MultiMessenger</h1>
+
+        <EditForm Model="Input" method="post" OnValidSubmit="SignInAsync" FormName="login">
+            <DataAnnotationsValidator />
+
+            @if (_errorMessage is not null)
+            {
+                <div class="alert alert-danger py-2" role="alert">@_errorMessage</div>
+            }
+
+            <div class="mb-3">
+                <label for="phone" class="form-label">Номер телефона</label>
+                <InputText id="phone" class="form-control" @bind-Value="Input.PhoneNumber"
+                           autocomplete="username" placeholder="+7 900 123-45-67" />
+                <ValidationMessage For="() => Input.PhoneNumber" class="text-danger small" />
+            </div>
+
+            <div class="mb-4">
+                <label for="password" class="form-label">Пароль</label>
+                <InputText id="password" type="password" class="form-control" @bind-Value="Input.Password"
+                           autocomplete="current-password" />
+                <ValidationMessage For="() => Input.Password" class="text-danger small" />
+            </div>
+
+            <button type="submit" class="btn btn-primary w-100">Войти</button>
+        </EditForm>
+    </div>
+</div>
+
+@code {
+    private string? _errorMessage;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    private LoginInput? _input;
+
+    // Ленивая инициализация в геттере, а не инициализатор свойства: при разборе
+    // формы биндер способен присвоить null, и анализатор BL0008 на это ругается.
+    [SupplyParameterFromForm]
+    private LoginInput Input
+    {
+        get => _input ??= new LoginInput();
+        set => _input = value;
+    }
+
+    [SupplyParameterFromQuery(Name = "returnUrl")]
+    private string? ReturnUrl { get; set; }
+
+    private async Task SignInAsync()
+    {
+        var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString();
+        var result = await Authenticator.AuthenticateAsync(Input.PhoneNumber, Input.Password, ipAddress);
+
+        if (!result.Succeeded)
+        {
+            _errorMessage = result.Failure switch
+            {
+                SignInFailure.Deactivated => "Учётная запись отключена. Обратитесь к администратору.",
+                _ => "Неверный номер телефона или пароль.",
+            };
+
+            return;
+        }
+
+        await HttpContext.SignInAsync(
+            CookieAuthenticationDefaults.AuthenticationScheme,
+            ManagerClaims.CreatePrincipal(result.Manager!));
+
+        Navigation.NavigateTo(SafeReturnUrl());
+    }
+
+    /// <summary>
+    /// returnUrl приходит из адресной строки, поэтому наружу по нему уводить нельзя —
+    /// иначе ссылка на форму входа становится открытым редиректом на чужой сайт.
+    /// </summary>
+    private string SafeReturnUrl()
+    {
+        if (string.IsNullOrWhiteSpace(ReturnUrl))
+        {
+            return "/";
+        }
+
+        var candidate = Uri.UnescapeDataString(ReturnUrl);
+
+        if (candidate.StartsWith("//", StringComparison.Ordinal) || Uri.IsWellFormedUriString(candidate, UriKind.Absolute))
+        {
+            return "/";
+        }
+
+        return candidate.StartsWith('/') ? candidate : "/" + candidate;
+    }
+
+    private sealed class LoginInput
+    {
+        [Required(ErrorMessage = "Укажите номер телефона")]
+        public string PhoneNumber { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Укажите пароль")]
+        public string Password { get; set; } = string.Empty;
+    }
+}

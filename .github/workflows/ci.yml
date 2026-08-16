@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, dev]
+  push:
+    branches: [dev]
+  workflow_dispatch:
+
+# Новый пуш в ту же ветку отменяет предыдущий прогон: держать очередь
+# из устаревших сборок незачем.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Сборка и тесты
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Установка .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Кэш пакетов NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('Directory.Packages.props') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Восстановление зависимостей
+        run: dotnet restore
+
+      - name: Сборка
+        run: dotnet build --configuration Release --no-restore
+
+      # Интеграционные тесты поднимают PostgreSQL и MinIO через Testcontainers.
+      # На раннерах GitHub есть Docker, поэтому отдельная настройка не нужна.
+      - name: Тесты
+        run: dotnet test --configuration Release --no-build --logger "trx;LogFileName=tests.trx" --results-directory artifacts/tests
+
+      - name: Отчёт о тестах
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: artifacts/tests
+          retention-days: 14
+
+  docker-image:
+    name: Сборка образа
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Без buildx сборка идёт стандартным драйвером docker, который не умеет
+      # выгружать кэш в хранилище GitHub Actions, — на этом задача и падала.
+      - name: Настройка Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Образ только собирается, но не публикуется: задача — поймать
+      # сломанный Dockerfile до вливания, а не выкатить что-то из ветки.
+      - name: Проверка сборки образа
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
