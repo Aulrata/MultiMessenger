@@ -151,7 +151,7 @@ public class AccountConnectionManagerTests
         await manager.ConnectAsync(accountId, MessengerPlatform.Telegram);
         var first = factory.LastCreated!;
 
-        var second = new RecordingConnector(accountId);
+        var second = new RecordingConnector { MessengerAccountId = accountId };
         await manager.AdoptAsync(accountId, second);
 
         first.Disposed.Should().BeTrue("прежнее соединение нужно закрыть, а не бросить");
@@ -205,7 +205,7 @@ public class AccountConnectionManagerTests
                 throw new InvalidOperationException("настройки платформы не заполнены");
             }
 
-            var connector = new RecordingConnector(messengerAccountId)
+            var connector = new RecordingConnector
             {
                 MessengerAccountId = messengerAccountId,
                 State = NextState,
@@ -221,7 +221,7 @@ public class AccountConnectionManagerTests
         }
     }
 
-    private sealed class RecordingConnector(Guid accountId) : FakeConnectorBase
+    private sealed class RecordingConnector : FakeConnectorBase
     {
         public ConnectionState State { get; init; } = ConnectionState.Connected;
 

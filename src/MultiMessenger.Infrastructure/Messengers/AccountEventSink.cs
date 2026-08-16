@@ -27,11 +27,12 @@ public sealed class AccountEventSink(
 {
     public Task OnMessageReceivedAsync(IncomingMessage message, CancellationToken cancellationToken = default)
     {
+        // Идентификатор клиента на платформе в технический лог не пишется: логи
+        // уезжают в файлы и Seq, а это персональные данные. Для диагностики
+        // достаточно канала и номера сообщения.
         logger.LogInformation(
-            "Получено сообщение {PlatformMessageId} от {PlatformUserId} по каналу {AccountId}; "
-            + "сохранение появится на этапе 2.5",
+            "Получено сообщение {PlatformMessageId} по каналу {AccountId}; сохранение появится на этапе 2.5",
             message.PlatformMessageId,
-            message.PlatformUserId,
             message.MessengerAccountId);
 
         return Task.CompletedTask;
@@ -58,8 +59,8 @@ public sealed class AccountEventSink(
     public Task OnReadStatusChangedAsync(ReadStatusChanged change, CancellationToken cancellationToken = default)
     {
         logger.LogDebug(
-            "Изменились статусы прочтения в диалоге с {PlatformUserId}; обработка появится на этапе 2.10",
-            change.PlatformUserId);
+            "Изменились статусы прочтения по каналу {AccountId}; обработка появится на этапе 2.10",
+            change.MessengerAccountId);
 
         return Task.CompletedTask;
     }

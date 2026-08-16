@@ -116,7 +116,7 @@ public sealed class TelegramConnector : IMessengerConnector
             await ReportConnectionAsync(ConnectionState.RequiresReauth, exception.Message);
             return ConnectionState.RequiresReauth;
         }
-        catch (Exception exception)
+        catch (Exception exception) when (exception is not OperationCanceledException)
         {
             _logger.LogWarning(exception, "Не удалось поднять сессию Telegram для канала {AccountId}", MessengerAccountId);
             await ReportConnectionAsync(ConnectionState.Disconnected, exception.Message);
@@ -167,7 +167,7 @@ public sealed class TelegramConnector : IMessengerConnector
 
             return DeliveryResult.Success(message.MessageId, sent.id.ToString(), sent.date);
         }
-        catch (Exception exception)
+        catch (Exception exception) when (exception is not OperationCanceledException)
         {
             return ToFailure(message.MessageId, exception);
         }
@@ -185,7 +185,7 @@ public sealed class TelegramConnector : IMessengerConnector
 
             return DeliveryResult.Success(request.MessageId, request.PlatformMessageId, DateTimeOffset.UtcNow);
         }
-        catch (Exception exception)
+        catch (Exception exception) when (exception is not OperationCanceledException)
         {
             return ToFailure(request.MessageId, exception);
         }
@@ -205,7 +205,7 @@ public sealed class TelegramConnector : IMessengerConnector
 
             return DeliveryResult.Success(request.MessageId, request.PlatformMessageId, DateTimeOffset.UtcNow);
         }
-        catch (Exception exception)
+        catch (Exception exception) when (exception is not OperationCanceledException)
         {
             return ToFailure(request.MessageId, exception);
         }
@@ -280,12 +280,16 @@ public sealed class TelegramConnector : IMessengerConnector
                     break;
                 }
 
-                foreach (var item in page.Messages.OfType<TelegramMessage>())
+                // Нормализатор возвращает null для групп и служебных сообщений;
+                // OfType заодно отбрасывает их и снимает возможную null-ссылку.
+                var normalizedPage = page.Messages
+                    .OfType<TelegramMessage>()
+                    .Select(item => TelegramMessageNormalizer.ToIncomingMessage(item, MessengerAccountId))
+                    .OfType<IncomingMessage>();
+
+                foreach (var normalized in normalizedPage)
                 {
-                    if (TelegramMessageNormalizer.ToIncomingMessage(item, MessengerAccountId) is { } normalized)
-                    {
-                        yield return normalized;
-                    }
+                    yield return normalized;
                 }
 
                 offsetId = page.Messages[^1].ID;
@@ -338,7 +342,7 @@ public sealed class TelegramConnector : IMessengerConnector
         {
             return new LoginStep.Failed(ToLoginFailure(exception), exception.Message);
         }
-        catch (Exception exception)
+        catch (Exception exception) when (exception is not OperationCanceledException)
         {
             _logger.LogWarning(exception, "Ошибка входа в Telegram для канала {AccountId}", MessengerAccountId);
 
@@ -430,7 +434,7 @@ public sealed class TelegramConnector : IMessengerConnector
                 break;
 
             // Менеджер прочитал переписку в официальном приложении — гасим счётчик.
-            case UpdateReadHistoryInbox { peer: PeerUser inboxPeer } inbox:
+            case UpdateReadHistoryInbox { peer: PeerUser inboxPeer }:
                 await _sink.OnReadStatusChangedAsync(new ReadStatusChanged
                 {
                     MessengerAccountId = MessengerAccountId,
