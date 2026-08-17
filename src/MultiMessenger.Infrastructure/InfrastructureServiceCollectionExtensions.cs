@@ -8,6 +8,7 @@ using MultiMessenger.Core.Identity;
 using MultiMessenger.Core.Messaging;
 using MultiMessenger.Core.Storage;
 using MultiMessenger.Infrastructure.Messengers;
+using MultiMessenger.Infrastructure.Messengers.Inbox;
 using MultiMessenger.Infrastructure.Messengers.Telegram;
 using MultiMessenger.Infrastructure.Auditing;
 using MultiMessenger.Infrastructure.Configuration;
@@ -52,7 +53,10 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddHostedService<AccountConnectionWorker>();
         services.AddHostedService<PendingLoginCleanupWorker>();
 
+        services.AddSingleton<IWorkspaceNotifier, WorkspaceNotifier>();
+
         services.AddScoped<MessengerAccountService>();
+        services.AddScoped<InboxService>();
 
         return services;
     }

@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using MultiMessenger.Core.Entities;
 using MultiMessenger.Core.Enums;
 using MultiMessenger.Core.Messaging;
+using MultiMessenger.Infrastructure.Messengers.Inbox;
 using MultiMessenger.Infrastructure.Persistence;
 
 namespace MultiMessenger.Infrastructure.Messengers;
@@ -25,17 +26,21 @@ public sealed class AccountEventSink(
     IServiceScopeFactory scopeFactory,
     ILogger<AccountEventSink> logger) : IMessengerEventSink
 {
-    public Task OnMessageReceivedAsync(IncomingMessage message, CancellationToken cancellationToken = default)
+    public async Task OnMessageReceivedAsync(IncomingMessage message, CancellationToken cancellationToken = default)
     {
-        // Идентификатор клиента на платформе в технический лог не пишется: логи
-        // уезжают в файлы и Seq, а это персональные данные. Для диагностики
-        // достаточно канала и номера сообщения.
-        logger.LogInformation(
-            "Получено сообщение {PlatformMessageId} по каналу {AccountId}; сохранение появится на этапе 2.5",
-            message.PlatformMessageId,
-            message.MessengerAccountId);
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var inbox = scope.ServiceProvider.GetRequiredService<InboxService>();
 
-        return Task.CompletedTask;
+        var result = await inbox.HandleAsync(message, cancellationToken);
+
+        // Идентификатор клиента на платформе в лог не пишется: логи уезжают
+        // в файлы и Seq, а это персональные данные. Для диагностики достаточно
+        // канала и номера сообщения.
+        logger.LogDebug(
+            "Сообщение {PlatformMessageId} по каналу {AccountId}: {Outcome}",
+            message.PlatformMessageId,
+            message.MessengerAccountId,
+            result.Outcome);
     }
 
     public Task OnMessageEditedAsync(MessageEdited edit, CancellationToken cancellationToken = default)
