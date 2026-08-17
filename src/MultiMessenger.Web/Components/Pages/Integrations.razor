@@ -9,9 +9,14 @@
 @inject MessengerAccountService Accounts
 @inject NavigationManager Navigation
 
-@* Страница статическая: шаги входа — это отдельные отправки формы, живое
-   соединение с Telegram живёт не здесь, а в PendingLoginStore. Заодно доступен
-   HttpContext, из которого берётся адрес для журнала аудита. *@
+@* Страница статическая, поэтому состояние шага не переживает запрос: при каждом
+   POST компонент создаётся заново. Blazor ищет форму по имени ДО вызова
+   обработчика, значит нужная форма обязана быть отрисована уже в этот момент —
+   иначе «no form on the page currently has that name».
+
+   Поэтому шаг и попытка едут в адресной строке: по ним страница знает, что
+   рисовать, ещё до разбора формы. Побочная польза — обновление страницы
+   не сбрасывает начатый вход. *@
 
 <PageTitle>Интеграции — MultiMessenger</PageTitle>
 
@@ -44,9 +49,7 @@
                             <td>@account.PhoneNumber</td>
                             <td>@StatusText(account.Status)</td>
                             <td class="text-end">
-                                @if (account.Status is MessengerAccountStatus.Active
-                                    or MessengerAccountStatus.Disconnected
-                                    or MessengerAccountStatus.RequiresReauth)
+                                @if (account.Status is not MessengerAccountStatus.PendingAuth)
                                 {
                                     <form method="post" @formname="@($"disconnect-{account.Id}")"
                                           @onsubmit="() => DisconnectAsync(account.Id)">
@@ -67,78 +70,68 @@
             <div class="card-body">
                 <h2 class="h6 mb-3">Подключить Telegram</h2>
 
-                @if (_message is not null)
+                @if (Notice is { } notice)
                 {
-                    <div class="alert @(_messageIsError ? "alert-danger" : "alert-success") py-2">@_message</div>
+                    <div class="alert @(IsError(notice) ? "alert-danger" : "alert-success") py-2">
+                        @NoticeText(notice)
+                    </div>
                 }
 
-                @switch (_step)
+                @if (Step == StepCode)
                 {
-                    case LoginStep.NeedsVerificationCode needsCode:
-                        <p class="text-body-secondary small">
-                            Telegram отправил код на @(needsCode.SentTo ?? "ваш номер").
-                            Он приходит в само приложение Telegram, а не по SMS.
-                        </p>
+                    <p class="text-body-secondary small">
+                        Telegram отправил код подтверждения. Он приходит в само приложение Telegram,
+                        а не по SMS.
+                    </p>
 
-                        <EditForm Model="CodeInput" method="post" OnValidSubmit="SubmitCodeAsync" FormName="submit-code">
-                            <DataAnnotationsValidator />
-                            <input type="hidden" name="loginId" value="@_loginId" />
+                    <EditForm Model="CodeInput" method="post" OnValidSubmit="SubmitCodeAsync" FormName="submit-code">
+                        <DataAnnotationsValidator />
 
-                            <div class="mb-3">
-                                <label for="code" class="form-label">Код подтверждения</label>
-                                <InputText id="code" class="form-control" @bind-Value="CodeInput.Code"
-                                           autocomplete="one-time-code" inputmode="numeric" />
-                                <ValidationMessage For="() => CodeInput.Code" class="text-danger small" />
+                        <div class="mb-3">
+                            <label for="code" class="form-label">Код подтверждения</label>
+                            <InputText id="code" class="form-control" @bind-Value="CodeInput.Code"
+                                       autocomplete="one-time-code" inputmode="numeric" />
+                            <ValidationMessage For="() => CodeInput.Code" class="text-danger small" />
+                        </div>
+
+                        <button type="submit" class="btn btn-primary">Подтвердить</button>
+                        <a class="btn btn-link" href="/integrations">Отмена</a>
+                    </EditForm>
+                }
+                else if (Step == StepPassword)
+                {
+                    <p class="text-body-secondary small">На аккаунте включена двухфакторная защита.</p>
+
+                    <EditForm Model="PasswordInput" method="post" OnValidSubmit="SubmitPasswordAsync" FormName="submit-password">
+                        <DataAnnotationsValidator />
+
+                        <div class="mb-3">
+                            <label for="tfa" class="form-label">Пароль</label>
+                            <InputText id="tfa" type="password" class="form-control" @bind-Value="PasswordInput.Password"
+                                       autocomplete="current-password" />
+                            <ValidationMessage For="() => PasswordInput.Password" class="text-danger small" />
+                        </div>
+
+                        <button type="submit" class="btn btn-primary">Войти</button>
+                        <a class="btn btn-link" href="/integrations">Отмена</a>
+                    </EditForm>
+                }
+                else
+                {
+                    <EditForm Model="PhoneInput" method="post" OnValidSubmit="BeginLoginAsync" FormName="begin-login">
+                        <DataAnnotationsValidator />
+
+                        <div class="mb-3">
+                            <label for="phone" class="form-label">Номер телефона</label>
+                            <InputText id="phone" class="form-control" @bind-Value="PhoneInput.PhoneNumber" />
+                            <ValidationMessage For="() => PhoneInput.PhoneNumber" class="text-danger small" />
+                            <div class="form-text">
+                                Рабочий номер, к которому привязан Telegram. Подставлен из вашего профиля.
                             </div>
+                        </div>
 
-                            <button type="submit" class="btn btn-primary">Подтвердить</button>
-                            <button type="submit" class="btn btn-link" formaction="/integrations">Отмена</button>
-                        </EditForm>
-
-                        break;
-
-                    case LoginStep.NeedsTwoFactorPassword needsPassword:
-                        <p class="text-body-secondary small">
-                            На аккаунте включена двухфакторная защита.
-                            @if (needsPassword.Hint is { Length: > 0 } hint)
-                            {
-                                <text>Подсказка: @hint</text>
-                            }
-                        </p>
-
-                        <EditForm Model="PasswordInput" method="post" OnValidSubmit="SubmitPasswordAsync" FormName="submit-password">
-                            <DataAnnotationsValidator />
-                            <input type="hidden" name="loginId" value="@_loginId" />
-
-                            <div class="mb-3">
-                                <label for="tfa" class="form-label">Пароль</label>
-                                <InputText id="tfa" type="password" class="form-control" @bind-Value="PasswordInput.Password"
-                                           autocomplete="current-password" />
-                                <ValidationMessage For="() => PasswordInput.Password" class="text-danger small" />
-                            </div>
-
-                            <button type="submit" class="btn btn-primary">Войти</button>
-                        </EditForm>
-
-                        break;
-
-                    default:
-                        <EditForm Model="PhoneInput" method="post" OnValidSubmit="BeginLoginAsync" FormName="begin-login">
-                            <DataAnnotationsValidator />
-
-                            <div class="mb-3">
-                                <label for="phone" class="form-label">Номер телефона</label>
-                                <InputText id="phone" class="form-control" @bind-Value="PhoneInput.PhoneNumber" />
-                                <ValidationMessage For="() => PhoneInput.PhoneNumber" class="text-danger small" />
-                                <div class="form-text">
-                                    Рабочий номер, к которому привязан Telegram. Подставлен из вашего профиля.
-                                </div>
-                            </div>
-
-                            <button type="submit" class="btn btn-primary">Получить код</button>
-                        </EditForm>
-
-                        break;
+                        <button type="submit" class="btn btn-primary">Получить код</button>
+                    </EditForm>
                 }
             </div>
         </div>
@@ -146,42 +139,64 @@
 </div>
 
 @code {
+    private const string StepCode = "code";
+    private const string StepPassword = "password";
+
     private List<MessengerAccount> _accounts = [];
     private Guid _managerId;
-    private LoginStep? _step;
-    private Guid _loginId;
-    private string? _message;
-    private bool _messageIsError;
 
     [CascadingParameter]
     private HttpContext HttpContext { get; set; } = default!;
 
-    [SupplyParameterFromForm(FormName = "begin-login")]
-    private PhoneForm? _phoneForm { get; set; }
-
-    [SupplyParameterFromForm(FormName = "submit-code")]
-    private CodeForm? _codeForm { get; set; }
-
-    [SupplyParameterFromForm(FormName = "submit-password")]
-    private PasswordForm? _passwordForm { get; set; }
+    [SupplyParameterFromQuery(Name = "step")]
+    public string? Step { get; set; }
 
     [SupplyParameterFromQuery(Name = "loginId")]
-    private Guid? LoginIdFromQuery { get; set; }
+    public Guid? LoginId { get; set; }
 
-    private PhoneForm PhoneInput => _phoneForm ??= new PhoneForm();
+    /// <summary>
+    /// Сообщение едет кодом, а не текстом: подставить в адрес произвольную строку
+    /// и прислать коллеге ссылку с выдуманным уведомлением не получится.
+    /// </summary>
+    [SupplyParameterFromQuery(Name = "notice")]
+    public string? Notice { get; set; }
 
-    private CodeForm CodeInput => _codeForm ??= new CodeForm();
+    private PhoneForm? _phoneForm;
+    private CodeForm? _codeForm;
+    private PasswordForm? _passwordForm;
 
-    private PasswordForm PasswordInput => _passwordForm ??= new PasswordForm();
+    // Имя свойства обязано совпадать с тем, что стоит в разметке: из него Blazor
+    // собирает префикс полей формы. Если связать «_codeForm», а в InputText
+    // написать «CodeInput.Code», поле уедет на сервер под чужим именем
+    // и молча не свяжется — форма отправится пустой.
+    [SupplyParameterFromForm(FormName = "begin-login")]
+    private PhoneForm PhoneInput
+    {
+        get => _phoneForm ??= new PhoneForm();
+        set => _phoneForm = value;
+    }
+
+    [SupplyParameterFromForm(FormName = "submit-code")]
+    private CodeForm CodeInput
+    {
+        get => _codeForm ??= new CodeForm();
+        set => _codeForm = value;
+    }
+
+    [SupplyParameterFromForm(FormName = "submit-password")]
+    private PasswordForm PasswordInput
+    {
+        get => _passwordForm ??= new PasswordForm();
+        set => _passwordForm = value;
+    }
 
     protected override async Task OnInitializedAsync()
     {
         _managerId = HttpContext.User.GetManagerId() ?? Guid.Empty;
-        await ReloadAsync();
+        _accounts = await Accounts.GetAccountsAsync(_managerId);
 
         if (string.IsNullOrWhiteSpace(PhoneInput.PhoneNumber))
         {
-            // Номер менеджера — он же номер, к которому привязан Telegram.
             PhoneInput.PhoneNumber = _accounts
                 .FirstOrDefault(account => account.Platform == MessengerPlatform.Telegram)?.PhoneNumber
                 ?? HttpContext.User.FindFirst(System.Security.Claims.ClaimTypes.MobilePhone)?.Value
@@ -194,89 +209,73 @@
         var (loginId, step) = await Accounts.BeginLoginAsync(
             _managerId, MessengerPlatform.Telegram, PhoneInput.PhoneNumber, ClientIp);
 
-        Apply(loginId, step);
-        await ReloadAsync();
+        GoTo(loginId, step);
     }
 
-    private async Task SubmitCodeAsync() =>
-        await ContinueAsync(new LoginAnswer.VerificationCode(CodeInput.Code));
+    private Task SubmitCodeAsync() => ContinueAsync(new LoginAnswer.VerificationCode(CodeInput.Code));
 
-    private async Task SubmitPasswordAsync() =>
-        await ContinueAsync(new LoginAnswer.TwoFactorPassword(PasswordInput.Password));
+    private Task SubmitPasswordAsync() => ContinueAsync(new LoginAnswer.TwoFactorPassword(PasswordInput.Password));
 
     private async Task ContinueAsync(LoginAnswer answer)
     {
-        var submittedLoginId = ReadLoginIdFromForm();
-
         var (loginId, step) = await Accounts.ContinueLoginAsync(
-            _managerId, submittedLoginId, answer, ClientIp);
+            _managerId, LoginId ?? Guid.Empty, answer, ClientIp);
 
-        Apply(loginId, step);
-        await ReloadAsync();
+        GoTo(loginId, step);
     }
 
     private async Task DisconnectAsync(Guid accountId)
     {
         await Accounts.DisconnectAsync(_managerId, accountId, ClientIp);
 
-        _message = "Канал отключён";
-        _messageIsError = false;
-        _step = null;
-
-        await ReloadAsync();
+        Navigation.NavigateTo("/integrations?notice=disconnected");
     }
-
-    private void Apply(Guid loginId, LoginStep step)
-    {
-        _loginId = loginId;
-        _step = step;
-
-        switch (step)
-        {
-            case LoginStep.Completed:
-                _message = "Telegram подключён";
-                _messageIsError = false;
-                _step = null;
-                _codeForm = null;
-                _passwordForm = null;
-                break;
-
-            case LoginStep.Failed failed:
-                _message = Describe(failed);
-                _messageIsError = true;
-                _step = null;
-                _codeForm = null;
-                _passwordForm = null;
-                break;
-
-            default:
-                _message = null;
-                break;
-        }
-    }
-
-    private static string Describe(LoginStep.Failed failed) => failed.Reason switch
-    {
-        LoginFailureReason.InvalidPhoneNumber => "Номер телефона в нераспознанном формате",
-        LoginFailureReason.InvalidCode => "Неверный код подтверждения",
-        LoginFailureReason.InvalidPassword => "Неверный пароль двухфакторной защиты",
-        LoginFailureReason.Expired => failed.Details ?? "Код истёк, начните заново",
-        LoginFailureReason.RateLimited => "Telegram временно ограничил попытки. Подождите и повторите",
-        LoginFailureReason.AccountBanned => "Аккаунт заблокирован платформой",
-        LoginFailureReason.NetworkError => "Нет связи с Telegram. Проверьте настройки прокси",
-        _ => failed.Details ?? "Не удалось подключить канал",
-    };
 
     /// <summary>
-    /// Идентификатор попытки едет скрытым полем формы: страница статическая,
-    /// между шагами состояние компонента не сохраняется.
+    /// Переход на следующий шаг отдельным запросом. Так обновление страницы
+    /// не повторяет отправку формы, а Blazor на следующем запросе рисует нужную
+    /// форму до того, как начнёт искать её по имени.
     /// </summary>
-    private Guid ReadLoginIdFromForm() =>
-        Guid.TryParse(HttpContext.Request.Form["loginId"], out var parsed) ? parsed : LoginIdFromQuery ?? Guid.Empty;
+    private void GoTo(Guid loginId, LoginStep step)
+    {
+        var target = step switch
+        {
+            LoginStep.NeedsVerificationCode => $"/integrations?loginId={loginId}&step={StepCode}",
+            LoginStep.NeedsTwoFactorPassword => $"/integrations?loginId={loginId}&step={StepPassword}",
+            LoginStep.Completed => "/integrations?notice=connected",
+            LoginStep.Failed failed => $"/integrations?notice={NoticeFor(failed)}",
+            _ => "/integrations",
+        };
+
+        Navigation.NavigateTo(target);
+    }
+
+    private static string NoticeFor(LoginStep.Failed failed) => failed switch
+    {
+        { Details: { } details } when details.Contains("не настроен", StringComparison.Ordinal) => "notconfigured",
+        { Details: { } details } when details.Contains("уже подключён", StringComparison.Ordinal) => "alreadyconnected",
+        _ => failed.Reason.ToString().ToLowerInvariant(),
+    };
+
+    private static bool IsError(string notice) => notice is not ("connected" or "disconnected");
+
+    private static string NoticeText(string notice) => notice switch
+    {
+        "connected" => "Telegram подключён",
+        "disconnected" => "Канал отключён",
+        "notconfigured" => "Telegram не настроен на сервере — обратитесь к администратору",
+        "alreadyconnected" => "Этот канал уже подключён",
+        "invalidphonenumber" => "Номер телефона в нераспознанном формате",
+        "invalidcode" => "Неверный код подтверждения",
+        "invalidpassword" => "Неверный пароль двухфакторной защиты",
+        "expired" => "Попытка подключения устарела, начните заново",
+        "ratelimited" => "Telegram временно ограничил попытки. Подождите и повторите",
+        "accountbanned" => "Аккаунт заблокирован платформой",
+        "networkerror" => "Нет связи с Telegram. Проверьте настройки прокси",
+        _ => "Не удалось подключить канал",
+    };
 
     private string? ClientIp => HttpContext.Connection.RemoteIpAddress?.ToString();
-
-    private async Task ReloadAsync() => _accounts = await Accounts.GetAccountsAsync(_managerId);
 
     private static string StatusText(MessengerAccountStatus status) => status switch
     {

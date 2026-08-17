@@ -7,7 +7,12 @@
 
 # MultiMessenger: локальные секреты и данные, которые не должны попадать в репозиторий
 .env
-/sessions/
+
+# Файлы сессий Telegram/WhatsApp — действующий доступ к аккаунтам менеджеров.
+# Без ведущего слеша: каталог создаётся рядом с приложением
+# (src/MultiMessenger.Web/sessions), а не в корне репозитория.
+sessions/
+*.session
 
 # User-specific files
 *.rsuser
