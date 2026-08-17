@@ -17,6 +17,7 @@ using MultiMessenger.Infrastructure.Identity;
 using MultiMessenger.Infrastructure.Media;
 using MultiMessenger.Infrastructure.Persistence;
 using MultiMessenger.Infrastructure.Storage;
+using MultiMessenger.Infrastructure.Workspace;
 
 namespace MultiMessenger.Infrastructure;
 
@@ -28,8 +29,15 @@ public static class InfrastructureServiceCollectionExtensions
     {
         services.AddMultiMessengerOptions(configuration);
 
-        services.AddDbContext<AppDbContext>(options =>
+        // Фабрика плюс область: интерактивные страницы Blazor живут часами, и один
+        // контекст на всё это время накопил бы в памяти всё прочитанное. Фоновые
+        // службы и обработчики запросов при этом продолжают получать AppDbContext
+        // обычным способом.
+        services.AddDbContextFactory<AppDbContext>(options =>
             options.UseNpgsql(DatabaseSettings.GetRequiredConnectionString(configuration)));
+
+        services.AddScoped<AppDbContext>(provider =>
+            provider.GetRequiredService<IDbContextFactory<AppDbContext>>().CreateDbContext());
 
         services.AddScoped<IAuditTrail, EfAuditTrail>();
 
@@ -66,6 +74,8 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<OutboxService>();
         services.AddScoped<OutboxDispatcher>();
         services.AddHostedService<OutboxWorker>();
+
+        services.AddScoped<WorkspaceQueries>();
 
         return services;
     }

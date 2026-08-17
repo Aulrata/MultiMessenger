@@ -22,8 +22,11 @@ public sealed class TelegramConnector : IMessengerConnector
     private readonly ILogger<TelegramConnector> _logger;
     private readonly TelegramPeerCache _peers;
 
+    private static readonly TimeSpan PeerRefreshInterval = TimeSpan.FromMinutes(1);
+
     private string? _phoneNumber;
     private bool _updatesSubscribed;
+    private DateTimeOffset _peersRefreshedAt = DateTimeOffset.MinValue;
 
     public TelegramConnector(
         Guid messengerAccountId,
@@ -461,6 +464,17 @@ public sealed class TelegramConnector : IMessengerConnector
         }
     }
 
+    /// <summary>
+    /// Собирает адресата для MTProto. Кроме идентификатора нужен <c>access_hash</c>,
+    /// без которого протокол обращаться к пользователю не позволяет.
+    /// <para>
+    /// Хеш приходит в словаре <c>Users</c> вместе с апдейтами, но не всегда: личные
+    /// сообщения Telegram присылает компактной формой <c>updateShortMessage</c>,
+    /// где этого словаря нет вовсе. Получить сообщение её хватает, а ответить — нет,
+    /// поэтому при промахе кеша хеши перечитываются из списка диалогов: любой,
+    /// кто написал, там присутствует.
+    /// </para>
+    /// </summary>
     private async Task<InputPeer> ResolvePeerAsync(string platformUserId)
     {
         var userId = long.Parse(platformUserId);
@@ -470,17 +484,47 @@ public sealed class TelegramConnector : IMessengerConnector
             return new InputPeerUser(userId, accessHash);
         }
 
-        // access_hash не сохранился — просим Telegram напомнить.
-        var users = await _client.Users_GetUsers([new InputUser(userId, 0)]);
+        await RefreshPeersAsync();
 
-        if (users.OfType<User>().FirstOrDefault() is not { } user)
+        if (_peers.TryGet(userId, out accessHash))
         {
-            throw new InvalidOperationException($"Пользователь {userId} недоступен");
+            return new InputPeerUser(userId, accessHash);
         }
 
-        _peers.Remember(user.id, user.access_hash);
+        throw new InvalidOperationException(
+            $"Не удалось определить access_hash пользователя {userId}: его нет ни в апдейтах, ни в списке диалогов");
+    }
 
-        return new InputPeerUser(user.id, user.access_hash);
+    /// <summary>
+    /// Перечитывает хеши доступа из списка диалогов. Обращение к API не бесплатное,
+    /// поэтому не чаще раза в минуту: при промахе на каждое сообщение из очереди
+    /// это иначе превратилось бы в поток запросов.
+    /// </summary>
+    private async Task RefreshPeersAsync()
+    {
+        var now = DateTimeOffset.UtcNow;
+
+        if (now - _peersRefreshedAt < PeerRefreshInterval)
+        {
+            return;
+        }
+
+        _peersRefreshedAt = now;
+
+        var dialogs = await _client.Messages_GetAllDialogs();
+
+        foreach (var (userId, user) in dialogs.users)
+        {
+            if (user is User { access_hash: var hash })
+            {
+                _peers.Remember(userId, hash);
+            }
+        }
+
+        _logger.LogDebug(
+            "Обновлены хеши доступа по каналу {AccountId}, пользователей: {Count}",
+            MessengerAccountId,
+            dialogs.users.Count);
     }
 
     private Task ReportConnectionAsync(ConnectionState state, string? details = null) =>

@@ -75,6 +75,15 @@ public sealed class OutboxDispatcher(
         {
             var oldest = group.First();
 
+            // Проверяем соединение до загрузки подробностей: у неподключённого канала
+            // сообщение всё равно останется ждать, а запросы к базе повторялись бы
+            // на каждом проходе — то есть каждые пару секунд, пока канал не поднимется.
+            if (!connections.TryGet(group.Key, out _))
+            {
+                attempts.Add(new DispatchAttempt(oldest.Id, DispatchOutcome.ChannelOffline));
+                continue;
+            }
+
             attempts.Add(new DispatchAttempt(oldest.Id, await DispatchOneAsync(oldest.Id, cancellationToken)));
         }
 
