@@ -29,16 +29,18 @@ public abstract class FakeConnectorBase : IMessengerConnector
 
     public virtual Task DisconnectAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 
-    public Task<DeliveryResult> SendMessageAsync(OutgoingMessage message, CancellationToken cancellationToken = default) =>
+    // Виртуальные по той же причине, что и методы соединения: наследники подменяют
+    // поведение, а вызовы идут через интерфейс — сокрытие через new там не работает.
+    public virtual Task<DeliveryResult> SendMessageAsync(OutgoingMessage message, CancellationToken cancellationToken = default) =>
         Task.FromResult(DeliveryResult.Success(message.MessageId, "platform-1", DateTimeOffset.UtcNow));
 
-    public Task<DeliveryResult> EditMessageAsync(EditMessageRequest request, CancellationToken cancellationToken = default) =>
+    public virtual Task<DeliveryResult> EditMessageAsync(EditMessageRequest request, CancellationToken cancellationToken = default) =>
         Task.FromResult(DeliveryResult.Success(request.MessageId, request.PlatformMessageId, DateTimeOffset.UtcNow));
 
-    public Task<DeliveryResult> DeleteMessageAsync(DeleteMessageRequest request, CancellationToken cancellationToken = default) =>
+    public virtual Task<DeliveryResult> DeleteMessageAsync(DeleteMessageRequest request, CancellationToken cancellationToken = default) =>
         Task.FromResult(DeliveryResult.Success(request.MessageId, request.PlatformMessageId, DateTimeOffset.UtcNow));
 
-    public Task<Stream> DownloadAttachmentAsync(string platformFileReference, CancellationToken cancellationToken = default) =>
+    public virtual Task<Stream> DownloadAttachmentAsync(string platformFileReference, CancellationToken cancellationToken = default) =>
         Task.FromResult<Stream>(new MemoryStream("файл"u8.ToArray()));
 
     public virtual async IAsyncEnumerable<IncomingMessage> EnumerateHistoryAsync(

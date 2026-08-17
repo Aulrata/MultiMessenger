@@ -39,6 +39,14 @@ public static class ConfigurationServiceCollectionExtensions
         services.AddOptions<SeedOptions>()
             .Bind(configuration.GetSection(SeedOptions.SectionName));
 
+        // Значения по умолчанию рабочие, но диапазоны проверяем на старте:
+        // паузы очереди защищают аккаунты от блокировки, и опечатка в конфиге
+        // не должна их случайно обнулить.
+        services.AddOptions<OutboxOptions>()
+            .Bind(configuration.GetSection(OutboxOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
         return services;
     }
 }

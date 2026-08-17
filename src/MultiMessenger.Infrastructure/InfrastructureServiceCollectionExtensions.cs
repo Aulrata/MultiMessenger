@@ -9,6 +9,7 @@ using MultiMessenger.Core.Messaging;
 using MultiMessenger.Core.Storage;
 using MultiMessenger.Infrastructure.Messengers;
 using MultiMessenger.Infrastructure.Messengers.Inbox;
+using MultiMessenger.Infrastructure.Messengers.Outbox;
 using MultiMessenger.Infrastructure.Messengers.Telegram;
 using MultiMessenger.Infrastructure.Auditing;
 using MultiMessenger.Infrastructure.Configuration;
@@ -57,6 +58,14 @@ public static class InfrastructureServiceCollectionExtensions
 
         services.AddScoped<MessengerAccountService>();
         services.AddScoped<InboxService>();
+
+        // Ограничитель частоты — синглтон: он помнит время последней отправки
+        // по каждому каналу, и это состояние должно переживать запросы.
+        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<OutboxRateLimiter>();
+        services.AddScoped<OutboxService>();
+        services.AddScoped<OutboxDispatcher>();
+        services.AddHostedService<OutboxWorker>();
 
         return services;
     }
