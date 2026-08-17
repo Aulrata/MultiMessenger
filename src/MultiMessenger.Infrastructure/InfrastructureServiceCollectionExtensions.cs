@@ -5,13 +5,19 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using MultiMessenger.Core.Auditing;
 using MultiMessenger.Core.Identity;
+using MultiMessenger.Core.Messaging;
 using MultiMessenger.Core.Storage;
+using MultiMessenger.Infrastructure.Messengers;
+using MultiMessenger.Infrastructure.Messengers.Inbox;
+using MultiMessenger.Infrastructure.Messengers.Outbox;
+using MultiMessenger.Infrastructure.Messengers.Telegram;
 using MultiMessenger.Infrastructure.Auditing;
 using MultiMessenger.Infrastructure.Configuration;
 using MultiMessenger.Infrastructure.Identity;
 using MultiMessenger.Infrastructure.Media;
 using MultiMessenger.Infrastructure.Persistence;
 using MultiMessenger.Infrastructure.Storage;
+using MultiMessenger.Infrastructure.Workspace;
 
 namespace MultiMessenger.Infrastructure;
 
@@ -23,8 +29,15 @@ public static class InfrastructureServiceCollectionExtensions
     {
         services.AddMultiMessengerOptions(configuration);
 
-        services.AddDbContext<AppDbContext>(options =>
+        // Фабрика плюс область: интерактивные страницы Blazor живут часами, и один
+        // контекст на всё это время накопил бы в памяти всё прочитанное. Фоновые
+        // службы и обработчики запросов при этом продолжают получать AppDbContext
+        // обычным способом.
+        services.AddDbContextFactory<AppDbContext>(options =>
             options.UseNpgsql(DatabaseSettings.GetRequiredConnectionString(configuration)));
+
+        services.AddScoped<AppDbContext>(provider =>
+            provider.GetRequiredService<IDbContextFactory<AppDbContext>>().CreateDbContext());
 
         services.AddScoped<IAuditTrail, EfAuditTrail>();
 
@@ -36,6 +49,33 @@ public static class InfrastructureServiceCollectionExtensions
             MinioSetup.CreateClient(provider.GetRequiredService<IOptions<MinioOptions>>().Value));
         services.AddScoped<IFileStorage, MinioFileStorage>();
         services.AddScoped<MediaAccessResolver>();
+
+        // Фабрики коннекторов — синглтоны: сами по себе они без состояния,
+        // состояние живёт в созданных ими подключениях.
+        services.AddSingleton<IMessengerConnectorFactory, TelegramConnectorFactory>();
+
+        // Живые подключения и приёмник событий переживают запросы, поэтому синглтоны.
+        // Область для работы с БД они создают себе сами на каждое событие.
+        services.AddSingleton<IMessengerEventSink, AccountEventSink>();
+        services.AddSingleton<AccountConnectionManager>();
+        services.AddSingleton<PendingLoginStore>();
+        services.AddHostedService<AccountConnectionWorker>();
+        services.AddHostedService<PendingLoginCleanupWorker>();
+
+        services.AddSingleton<IWorkspaceNotifier, WorkspaceNotifier>();
+
+        services.AddScoped<MessengerAccountService>();
+        services.AddScoped<InboxService>();
+
+        // Ограничитель частоты — синглтон: он помнит время последней отправки
+        // по каждому каналу, и это состояние должно переживать запросы.
+        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<OutboxRateLimiter>();
+        services.AddScoped<OutboxService>();
+        services.AddScoped<OutboxDispatcher>();
+        services.AddHostedService<OutboxWorker>();
+
+        services.AddScoped<WorkspaceQueries>();
 
         return services;
     }

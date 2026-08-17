@@ -1,11 +1,458 @@
 @page "/"
 @attribute [Authorize(Policy = AuthorizationPolicies.Workspace)]
+@rendermode InteractiveServer
+@implements IAsyncDisposable
+
+@using MultiMessenger.Core.Messaging
+@using MultiMessenger.Infrastructure.Messengers.Outbox
+@using MultiMessenger.Infrastructure.Workspace
+
+@inject WorkspaceQueries Queries
+@inject OutboxService Outbox
+@inject IWorkspaceNotifier Notifier
+
+@* Страница интерактивная: обновления приходят по SignalR, без перезагрузки.
+   Оповещения адресные — подписка идёт на идентификатор текущего сотрудника,
+   чужие сообщения сюда не попадают даже на мгновение. *@
 
 <PageTitle>Диалоги — MultiMessenger</PageTitle>
 
-<h1 class="h4 mb-4">Диалоги</h1>
+<div class="workspace">
+    <aside class="contacts">
+        <div class="contacts-header">
+            <span class="fw-semibold">Диалоги</span>
+            @if (_contacts.Count > 0)
+            {
+                <span class="text-body-secondary small">@_contacts.Count</span>
+            }
+        </div>
 
-<div class="alert alert-secondary" role="alert">
-    Подключённых каналов пока нет. Раздел «Интеграции» и переписка появятся на втором этапе —
-    сейчас работают вход в систему и управление сотрудниками.
+        @if (_contacts.Count == 0)
+        {
+            <p class="p-3 text-body-secondary small">
+                Пока ни одного диалога. Подключите канал в разделе
+                <a href="/integrations">Интеграции</a> — переписка появится здесь автоматически.
+            </p>
+        }
+
+        @foreach (var contact in _contacts)
+        {
+            <div class="contact-row @(IsCurrent(contact) ? "active" : null)"
+                 @onclick="() => SelectContactAsync(contact)">
+                <div class="d-flex justify-content-between align-items-baseline">
+                    <span class="fw-semibold text-truncate">@contact.DisplayName</span>
+                    <span class="text-body-secondary small ms-2">@ShortTime(contact.LastMessageAt)</span>
+                </div>
+                <div class="d-flex justify-content-between align-items-baseline">
+                    <span class="text-body-secondary small text-truncate">
+                        @(contact.LastMessagePreview ?? "нет сообщений")
+                    </span>
+                    @if (contact.UnreadCount > 0)
+                    {
+                        <span class="badge rounded-pill text-bg-primary ms-2">@contact.UnreadCount</span>
+                    }
+                </div>
+            </div>
+
+            @* У клиента может быть несколько платформ — тогда строка раскрывается
+               в подсписок, по чату на канал. Смешивать переписки в одну ленту
+               мы решили не делать. *@
+            @if (contact.HasSeveralPlatforms && _expandedContactId == contact.ContactId)
+            {
+                foreach (var dialog in contact.Dialogs)
+                {
+                    <div class="dialog-row @(_selectedDialogId == dialog.DialogId ? "active" : null)"
+                         @onclick:stopPropagation="true"
+                         @onclick="() => SelectDialogAsync(contact, dialog)">
+                        <span>@dialog.Platform</span>
+                        @if (dialog.UnreadCount > 0)
+                        {
+                            <span class="badge rounded-pill text-bg-primary">@dialog.UnreadCount</span>
+                        }
+                    </div>
+                }
+            }
+        }
+    </aside>
+
+    <section class="conversation">
+        @if (_selectedDialog is null)
+        {
+            <div class="empty-state text-body-secondary">Выберите диалог слева</div>
+        }
+        else
+        {
+            <div class="conversation-header">
+                <div>
+                    <div class="fw-semibold">@_card?.DisplayName</div>
+                    <div class="text-body-secondary small">
+                        @_selectedDialog.Platform
+                        @if (_selectedDialog.ChannelStatus is not MessengerAccountStatus.Active)
+                        {
+                            <span class="text-danger">· канал не подключён</span>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <div class="messages">
+                @if (_hasMore)
+                {
+                    <div class="text-center py-2">
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="LoadOlderAsync" disabled="@_loadingOlder">
+                            @(_loadingOlder ? "Загружаю…" : "Загрузить более раннее")
+                        </button>
+                    </div>
+                }
+
+                @foreach (var message in _messages)
+                {
+                    <div class="message @(message.Direction == MessageDirection.Outgoing ? "outgoing" : "incoming")">
+                        @if (message.IsDeleted)
+                        {
+                            <span class="fst-italic text-body-secondary">сообщение удалено</span>
+                        }
+                        else
+                        {
+                            <span class="message-text">@message.Text</span>
+
+                            @if (message.AttachmentCount > 0)
+                            {
+                                <span class="badge text-bg-light ms-1">вложений: @message.AttachmentCount</span>
+                            }
+                        }
+
+                        <span class="message-meta">
+                            @message.CreatedAt.ToLocalTime().ToString("HH:mm")
+                            @if (message.IsEdited)
+                            {
+                                <span>· изменено</span>
+                            }
+                            @if (message.Direction == MessageDirection.Outgoing)
+                            {
+                                <span>· @StatusText(message.Status)</span>
+                            }
+                        </span>
+
+                        @if (message.Status is MessageStatus.Failed && message.FailureReason is { } failure)
+                        {
+                            <div class="text-danger small">@failure</div>
+                        }
+                    </div>
+                }
+            </div>
+
+            <div class="composer">
+                @if (_sendError is { } error)
+                {
+                    <div class="alert alert-danger py-1 px-2 mb-2 small">@error</div>
+                }
+
+                <div class="d-flex gap-2 align-items-end">
+                    <textarea class="form-control" rows="2" placeholder="Написать сообщение…"
+                              @bind="_draft" @bind:event="oninput" @onkeydown="OnComposerKeyDownAsync"></textarea>
+                    <button class="btn btn-primary" @onclick="SendAsync"
+                            disabled="@(_sending || string.IsNullOrWhiteSpace(_draft))">
+                        Отправить
+                    </button>
+                </div>
+                <div class="form-text">
+                    Файлы и голосовые появятся на этапе 2.9. Enter отправляет, Shift+Enter — перенос строки.
+                </div>
+            </div>
+        }
+    </section>
+
+    @if (_card is { } card)
+    {
+        <aside class="contact-card">
+            <div class="fw-semibold mb-3">Клиент</div>
+
+            <div class="mb-3">
+                <label class="form-label small">Имя</label>
+                <input class="form-control form-control-sm" @bind="_cardName" />
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label small">Номер заявки U-ON</label>
+                <input class="form-control form-control-sm" @bind="_cardCrm" />
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label small">Заметки</label>
+                <textarea class="form-control form-control-sm" rows="4" @bind="_cardNotes"></textarea>
+            </div>
+
+            <button class="btn btn-sm btn-outline-primary" @onclick="SaveCardAsync" disabled="@_savingCard">
+                Сохранить
+            </button>
+
+            @if (_cardSaved)
+            {
+                <span class="text-success small ms-2">сохранено</span>
+            }
+
+            <div class="mt-4">
+                <div class="text-body-secondary small mb-1">Каналы</div>
+                @foreach (var channel in card.Channels)
+                {
+                    <div class="small">
+                        @channel.Platform
+                        @if (channel.DisplayNameOnPlatform is { Length: > 0 } name)
+                        {
+                            <span class="text-body-secondary">· @name</span>
+                        }
+                    </div>
+                }
+            </div>
+        </aside>
+    }
 </div>
+
+@code {
+    private IReadOnlyList<ContactSummary> _contacts = [];
+    private List<MessageView> _messages = [];
+    private ContactSummary? _selectedContact;
+    private DialogSummary? _selectedDialog;
+    private ContactCard? _card;
+    private Guid? _expandedContactId;
+    private Guid? _selectedDialogId;
+
+    private string _draft = string.Empty;
+    private string? _sendError;
+    private bool _sending;
+    private bool _hasMore;
+    private bool _loadingOlder;
+
+    private string _cardName = string.Empty;
+    private string? _cardCrm;
+    private string? _cardNotes;
+    private bool _savingCard;
+    private bool _cardSaved;
+
+    private Guid _managerId;
+    private IDisposable? _subscription;
+
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthenticationState { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = AuthenticationState is null ? null : await AuthenticationState;
+        _managerId = state?.User.GetManagerId() ?? Guid.Empty;
+
+        await ReloadContactsAsync();
+
+        // Подписка живёт столько же, сколько открытая страница; освобождается
+        // в DisposeAsync, иначе подписки копились бы при каждом открытии.
+        _subscription = Notifier.Subscribe(_managerId, OnWorkspaceEventAsync);
+    }
+
+    /// <summary>
+    /// Обработчик приходит из фоновых служб, а не из цепи Blazor, поэтому любое
+    /// обращение к состоянию компонента идёт через InvokeAsync.
+    /// </summary>
+    private async Task OnWorkspaceEventAsync(WorkspaceNotification notification)
+    {
+        await InvokeAsync(async () =>
+        {
+            await ReloadContactsAsync();
+
+            if (_selectedDialogId == notification.DialogId)
+            {
+                await ReloadMessagesAsync();
+            }
+
+            StateHasChanged();
+        });
+    }
+
+    private async Task SelectContactAsync(ContactSummary contact)
+    {
+        // Одна платформа — открываем переписку сразу; несколько — раскрываем список.
+        if (contact.HasSeveralPlatforms)
+        {
+            _expandedContactId = _expandedContactId == contact.ContactId ? null : contact.ContactId;
+            return;
+        }
+
+        await SelectDialogAsync(contact, contact.Dialogs[0]);
+    }
+
+    private async Task SelectDialogAsync(ContactSummary contact, DialogSummary dialog)
+    {
+        _selectedContact = contact;
+        _selectedDialog = dialog;
+        _selectedDialogId = dialog.DialogId;
+        _sendError = null;
+        _draft = string.Empty;
+
+        await ReloadMessagesAsync();
+
+        _card = await Queries.GetContactCardAsync(_managerId, contact.ContactId);
+        _cardName = _card?.DisplayName ?? string.Empty;
+        _cardCrm = _card?.CrmOrderNumber;
+        _cardNotes = _card?.Notes;
+        _cardSaved = false;
+
+        // Открыли — значит прочитали. Счётчик гаснет сразу, а не после обновления.
+        await Queries.MarkDialogReadAsync(_managerId, dialog.DialogId);
+        await ReloadContactsAsync();
+    }
+
+    private async Task OnComposerKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter" && !args.ShiftKey)
+        {
+            await SendAsync();
+        }
+    }
+
+    private async Task SendAsync()
+    {
+        if (_selectedDialog is null || string.IsNullOrWhiteSpace(_draft) || _sending)
+        {
+            return;
+        }
+
+        _sending = true;
+        _sendError = null;
+
+        try
+        {
+            var result = await Outbox.EnqueueAsync(_managerId, _selectedDialog.DialogId, _draft);
+
+            if (result.Succeeded)
+            {
+                _draft = string.Empty;
+
+                // Сообщение уже в базе со статусом «отправляется» — показываем
+                // немедленно, не дожидаясь платформы.
+                await ReloadMessagesAsync();
+                await ReloadContactsAsync();
+            }
+            else
+            {
+                _sendError = result.Failure switch
+                {
+                    EnqueueFailure.EmptyMessage => "Сообщение пустое",
+                    EnqueueFailure.ChannelUnavailable => "Канал требует повторного входа — зайдите в «Интеграции»",
+                    _ => "Не удалось поставить сообщение в очередь",
+                };
+            }
+        }
+        finally
+        {
+            _sending = false;
+        }
+    }
+
+    private async Task LoadOlderAsync()
+    {
+        if (_selectedDialog is null || _messages.Count == 0)
+        {
+            return;
+        }
+
+        _loadingOlder = true;
+
+        try
+        {
+            var page = await Queries.GetMessagesAsync(
+                _managerId, _selectedDialog.DialogId, before: _messages[0].CreatedAt);
+
+            _messages = [.. page.Messages, .. _messages];
+            _hasMore = page.HasMore;
+        }
+        finally
+        {
+            _loadingOlder = false;
+        }
+    }
+
+    private async Task SaveCardAsync()
+    {
+        if (_card is null)
+        {
+            return;
+        }
+
+        _savingCard = true;
+
+        try
+        {
+            var saved = await Queries.UpdateContactCardAsync(
+                _managerId, _card.ContactId, _cardName, _cardCrm, _cardNotes);
+
+            _cardSaved = saved;
+
+            if (saved)
+            {
+                await ReloadContactsAsync();
+            }
+        }
+        finally
+        {
+            _savingCard = false;
+        }
+    }
+
+    private async Task ReloadContactsAsync()
+    {
+        _contacts = await Queries.GetContactsAsync(_managerId);
+
+        // Ссылка на выбранный контакт после перечитывания устаревает.
+        if (_selectedDialogId is { } dialogId)
+        {
+            _selectedContact = _contacts.FirstOrDefault(contact =>
+                contact.Dialogs.Any(dialog => dialog.DialogId == dialogId));
+            _selectedDialog = _selectedContact?.Dialogs.FirstOrDefault(dialog => dialog.DialogId == dialogId);
+        }
+    }
+
+    private async Task ReloadMessagesAsync()
+    {
+        if (_selectedDialog is null)
+        {
+            return;
+        }
+
+        var page = await Queries.GetMessagesAsync(_managerId, _selectedDialog.DialogId);
+        _messages = [.. page.Messages];
+        _hasMore = page.HasMore;
+    }
+
+    private bool IsCurrent(ContactSummary contact) =>
+        _selectedContact?.ContactId == contact.ContactId
+        || _expandedContactId == contact.ContactId;
+
+    private static string StatusText(MessageStatus status) => status switch
+    {
+        MessageStatus.Pending => "отправляется",
+        MessageStatus.Sent => "отправлено",
+        MessageStatus.Delivered => "доставлено",
+        MessageStatus.Read => "прочитано",
+        MessageStatus.Failed => "ошибка",
+        _ => status.ToString(),
+    };
+
+    private static string ShortTime(DateTimeOffset? moment)
+    {
+        if (moment is not { } value)
+        {
+            return string.Empty;
+        }
+
+        var local = value.ToLocalTime();
+
+        return local.Date == DateTimeOffset.Now.Date
+            ? local.ToString("HH:mm")
+            : local.ToString("dd.MM");
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _subscription?.Dispose();
+        await ValueTask.CompletedTask;
+    }
+}
