@@ -36,7 +36,7 @@
   </ItemGroup>
   <!-- Клиенты мессенджеров -->
   <ItemGroup>
-    <PackageVersion Include="WTelegramClient" Version="4.4.7" />
+    <PackageVersion Include="WTelegramClient" Version="4.4.9" />
   </ItemGroup>
   <!-- Тесты.
        FluentAssertions намеренно закреплён на 7.x: начиная с 8.0 библиотека
