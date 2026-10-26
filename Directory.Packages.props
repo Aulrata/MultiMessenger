@@ -7,7 +7,7 @@
   </PropertyGroup>
   <!-- Данные: PostgreSQL через EF Core, MinIO через S3-совместимый клиент -->
   <ItemGroup>
-    <PackageVersion Include="AWSSDK.S3" Version="4.0.102.1" />
+    <PackageVersion Include="AWSSDK.S3" Version="4.0.104.6" />
     <!-- EF Core прописан явно, хотя приезжает и с Npgsql-провайдером: провайдер тянет
          версию 10.0.4, и без явной ссылки тестовый проект собирался против неё,
          а Infrastructure — против 10.0.11 из пакета Design (MSB3277). -->
